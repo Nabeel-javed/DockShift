@@ -52,10 +52,26 @@ enum DockBridge {
         return CFPreferencesCopyAppValue("autohide" as CFString, domain) as? Bool ?? false
     }
 
-    /// Changes Apple's Dock auto-hide setting and restarts the Dock.
-    static func setAutoHidden(_ hidden: Bool) {
-        guard isAutoHidden != hidden else { return }
-        CFPreferencesSetAppValue("autohide" as CFString, hidden as CFBoolean, domain)
+    /// Seconds the pointer must rest at the edge before the hidden Dock appears
+    /// (Apple's default is 0; nil means the key is unset).
+    static var autoHideDelay: Double? {
+        CFPreferencesAppSynchronize(domain)
+        return CFPreferencesCopyAppValue("autohide-delay" as CFString, domain) as? Double
+    }
+
+    /// Changes Apple's Dock auto-hide setting and reveal delay, restarting
+    /// the Dock once if anything changed.
+    static func configureAutoHide(hidden: Bool, delay: Double?) {
+        var changed = false
+        if isAutoHidden != hidden {
+            CFPreferencesSetAppValue("autohide" as CFString, hidden as CFBoolean, domain)
+            changed = true
+        }
+        if autoHideDelay != delay {
+            CFPreferencesSetAppValue("autohide-delay" as CFString, delay.map { $0 as CFNumber }, domain)
+            changed = true
+        }
+        guard changed else { return }
         CFPreferencesAppSynchronize(domain)
         restartDock()
     }
