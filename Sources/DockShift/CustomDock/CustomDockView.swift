@@ -410,8 +410,9 @@ private struct WidgetTile: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: layout.iconSize * 0.22, style: .continuous)
-                    .fill(.primary.opacity(0.07))
+                    .fill(.primary.opacity(widgetDrawsOwnBackground(widget.type) ? 0 : 0.07))
             )
+            .clipShape(RoundedRectangle(cornerRadius: layout.iconSize * 0.22, style: .continuous))
             .contextMenu {
                 if widgetHasConfiguration(widget.type) {
                     Button("Configure widget…") { showConfig = true }

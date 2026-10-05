@@ -32,5 +32,19 @@
 	<string>MIT License</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>DockShift shows your upcoming events in the Calendar widget. It only reads events.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>DockShift shows your upcoming events in the Calendar widget. It only reads events.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>DockShift shows, adds and completes reminders in the Reminders widget.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>DockShift shows, adds and completes reminders in the Reminders widget.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>DockShift controls Music and Spotify from the Now Playing widget.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>DockShift uses your location for the Weather widget's forecast.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>DockShift uses your location for the Weather widget's forecast.</string>
 </dict>
 </plist>

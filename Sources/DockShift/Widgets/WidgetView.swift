@@ -51,6 +51,10 @@ struct WidgetView: View {
         case .timeProgress: TimeProgressTile(context: context)
         case .countdown: CountdownTile(context: context)
         case .alarm: AlarmTile(context: context)
+        case .reminders: RemindersTile(context: context)
+        case .hydration: HydrationTile(context: context)
+        case .calendar: CalendarTile(context: context)
+        case .stickyNote: StickyNoteTile(context: context)
         default: PlaceholderTile(context: context)
         }
     }
@@ -59,8 +63,18 @@ struct WidgetView: View {
 /// Whether the family has a configuration popover.
 func widgetHasConfiguration(_ type: WidgetType) -> Bool {
     switch type {
-    case .clock, .stopwatch: return false
-    case .worldClock, .focusTimer, .timeProgress, .countdown, .alarm: return true
+    case .worldClock, .focusTimer, .timeProgress, .countdown, .alarm,
+         .reminders, .hydration, .calendar, .stickyNote:
+        return true
+    default:
+        return false
+    }
+}
+
+/// Families that paint their own background instead of the standard tile fill.
+func widgetDrawsOwnBackground(_ type: WidgetType) -> Bool {
+    switch type {
+    case .stickyNote, .hydration: return true
     default: return false
     }
 }
@@ -77,6 +91,10 @@ struct WidgetConfigView: View {
             case .timeProgress: TimeProgressConfig(context: context)
             case .countdown: CountdownConfig(context: context)
             case .alarm: AlarmConfig(context: context)
+            case .reminders: RemindersConfig(context: context)
+            case .hydration: HydrationConfig(context: context)
+            case .calendar: CalendarConfig(context: context)
+            case .stickyNote: StickyNoteConfig(context: context)
             default: Text("Nothing to configure.").padding()
             }
         }
