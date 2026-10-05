@@ -107,12 +107,19 @@ final class ProfileStore: ObservableObject {
 
     // MARK: - Applying
 
+    /// Mirrors the Settings toggle; the overlay also needs Screen Recording permission.
+    var smoothSwitching = true
+
     /// Writes the profile to Apple's Dock and restarts it.
     func apply(_ id: UUID) {
         guard let target = profile(id: id) else { return }
         lastAppliedAt = Date()
         do {
-            try DockBridge.apply(target.items)
+            if smoothSwitching {
+                try DockTransition.perform { try DockBridge.apply(target.items) }
+            } else {
+                try DockBridge.apply(target.items)
+            }
             activeProfileID = id
             lastError = nil
             save()

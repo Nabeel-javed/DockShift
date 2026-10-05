@@ -19,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.$profiles
             .sink { HotKeyManager.shared.sync(profiles: $0) }
             .store(in: &cancellables)
+        settings.$smoothSwitching
+            .sink { [weak self] in self?.store.smoothSwitching = $0 }
+            .store(in: &cancellables)
 
         watcher.onChange = { [weak self] in
             guard let self, self.settings.autoSaveDockChanges else { return }

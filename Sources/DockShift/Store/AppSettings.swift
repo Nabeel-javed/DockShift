@@ -17,6 +17,10 @@ final class AppSettings: ObservableObject {
         didSet { if !isReverting { updateLoginItem(oldValue: oldValue) } }
     }
 
+    @Published var smoothSwitching: Bool {
+        didSet { defaults.set(smoothSwitching, forKey: Keys.smoothSwitching) }
+    }
+
     @Published var loginItemError: String?
 
     private let defaults = UserDefaults.standard
@@ -25,11 +29,13 @@ final class AppSettings: ObservableObject {
     private enum Keys {
         static let showProfileName = "showProfileNameInMenuBar"
         static let autoSave = "autoSaveDockChanges"
+        static let smoothSwitching = "smoothSwitching"
     }
 
     init() {
         showProfileNameInMenuBar = defaults.object(forKey: Keys.showProfileName) as? Bool ?? true
         autoSaveDockChanges = defaults.bool(forKey: Keys.autoSave)
+        smoothSwitching = defaults.object(forKey: Keys.smoothSwitching) as? Bool ?? true
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

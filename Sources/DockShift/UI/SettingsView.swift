@@ -20,6 +20,7 @@ private struct GeneralSettingsView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: ProfileStore
     @State private var backupMessage: String?
+    @State private var screenCaptureGranted = DockTransition.hasScreenCapturePermission
 
     var body: some View {
         Form {
@@ -31,6 +32,29 @@ private struct GeneralSettingsView: View {
                 Toggle("Show active Dock name in menu bar", isOn: $settings.showProfileNameInMenuBar)
                 Toggle("Automatically save Dock changes", isOn: $settings.autoSaveDockChanges)
                 Text("Changes you make directly in Apple's Dock are synced to the active profile.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Switching") {
+                Toggle("Smooth Dock switching", isOn: $settings.smoothSwitching)
+                HStack {
+                    if screenCaptureGranted {
+                        Label("Screen Recording access granted", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Label("Needs Screen Recording access", systemImage: "exclamationmark.circle")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Grant Access…") {
+                            DockTransition.requestScreenCapturePermission()
+                            screenCaptureGranted = DockTransition.hasScreenCapturePermission
+                            openScreenRecordingSettings()
+                        }
+                    }
+                }
+                .font(.caption)
+                Text("Hides the flicker while the Dock restarts by freezing a snapshot of it. Without Screen Recording access, switching still works but is not smooth.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -52,6 +76,15 @@ private struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            screenCaptureGranted = DockTransition.hasScreenCapturePermission
+        }
+    }
+
+    private func openScreenRecordingSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func backUp() {
