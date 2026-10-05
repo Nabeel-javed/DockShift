@@ -28,7 +28,11 @@ struct CustomDockRootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-        .animation(model.isRevealed ? .spring(response: 0.3, dampingFraction: 0.86) : .easeIn(duration: 0.2),
+        // Springs start moving at once and retarget smoothly if the pointer
+        // changes its mind mid-slide; the hide is a touch quicker and never bounces.
+        .animation(model.isRevealed
+                   ? .spring(response: 0.3, dampingFraction: 0.86)
+                   : .spring(response: 0.24, dampingFraction: 1.0),
                    value: model.isRevealed)
         .animation(.easeInOut(duration: 0.2), value: model.showsHandle)
     }

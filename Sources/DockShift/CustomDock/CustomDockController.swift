@@ -36,6 +36,7 @@ final class CustomDockController {
     private var trackingTimer: Timer?
     private var pendingHide: DispatchWorkItem?
     private var menuIsOpen = false
+    private var lastPointer: (point: NSPoint, time: TimeInterval)?
     /// The Dock's bar on screen when revealed, for hit testing.
     private var barRect: NSRect = .zero
 
@@ -170,6 +171,7 @@ final class CustomDockController {
         panel.onSwitch = { [weak self] offset in
             self?.store.cycleProfile(kind: .customDock, by: offset)
         }
+        panel.pointerView.onPointerEvent = { [weak self] in self?.pointerMoved() }
         let root = CustomDockRootView(model: model)
             .environmentObject(store)
             .environmentObject(settings)
@@ -265,9 +267,9 @@ final class CustomDockController {
         }) {
             eventMonitors.append(monitor)
         }
-        // A slow check catches what the monitors can't see, such as the pointer
-        // leaving the Dock's own window.
-        trackingTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        // A slow check catches anything the monitors and the window's own
+        // tracking area miss.
+        trackingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.pointerMoved() }
         }
     }
@@ -289,17 +291,49 @@ final class CustomDockController {
             return
         }
 
+        let speedAway = speedAwayFromEdge(to: mouse)
         let edge = edgeStrip(on: screen)
-        let inZone = model.isRevealed
-            ? barRect.insetBy(dx: -14, dy: -14).union(edge).contains(mouse)
-            : edge.contains(mouse)
-        if inZone || isInteracting {
-            pendingHide?.cancel()
-            pendingHide = nil
+        if model.isRevealed ? keepZone(on: screen).contains(mouse) : edge.contains(mouse) {
+            cancelPendingHide()
             setRevealed(true)
         } else if model.isRevealed {
-            hide(after: 0.5)
+            // A menu, popover or drag from the Dock keeps it up (but never brings it up).
+            guard !isInteracting else {
+                cancelPendingHide()
+                return
+            }
+            // Leaving decisively, far off or with a quick move away from the edge,
+            // hides at once; a small overshoot gets a moment's grace in case the
+            // pointer comes straight back.
+            let decisive = distance(from: mouse, to: barRect) > 36 || speedAway > 450
+            hide(after: decisive ? 0 : 0.12)
         }
+    }
+
+    /// Where the pointer keeps a revealed Dock up: the bar, a few points
+    /// around it, and the strip along the edge in front of it.
+    private func keepZone(on screen: NSScreen) -> NSRect {
+        barRect.insetBy(dx: -6, dy: -6).union(edgeStrip(on: screen))
+    }
+
+    /// How fast the pointer is moving away from the Dock's edge, in points per
+    /// second, from the previous sample (0 when that is stale).
+    private func speedAwayFromEdge(to point: NSPoint) -> CGFloat {
+        let now = ProcessInfo.processInfo.systemUptime
+        defer { lastPointer = (point, now) }
+        guard let last = lastPointer, now > last.time, now - last.time < 0.1 else { return 0 }
+        let elapsed = CGFloat(now - last.time)
+        switch settings.customDock.position {
+        case .bottom: return (point.y - last.point.y) / elapsed
+        case .left: return (point.x - last.point.x) / elapsed
+        case .right: return (last.point.x - point.x) / elapsed
+        }
+    }
+
+    private func distance(from point: NSPoint, to rect: NSRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return hypot(dx, dy)
     }
 
     /// A popover, menu or drag that started on the Dock keeps it up.
@@ -338,15 +372,27 @@ final class CustomDockController {
     }
 
     private func hide(after delay: TimeInterval) {
+        guard delay > 0 else {
+            cancelPendingHide()
+            setRevealed(false)
+            return
+        }
         guard pendingHide == nil else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pendingHide = nil
-            guard self.autoHideActive, !self.isInteracting else { return }
+            guard self.autoHideActive, !self.isInteracting, let screen = self.screen,
+                  !self.keepZone(on: screen).contains(NSEvent.mouseLocation)
+            else { return }
             self.setRevealed(false)
         }
         pendingHide = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func cancelPendingHide() {
+        pendingHide?.cancel()
+        pendingHide = nil
     }
 
     /// The view animates the slide whenever this changes.
@@ -361,6 +407,9 @@ final class CustomDockController {
 /// Borderless, non-activating panel that behaves like a Dock.
 final class CustomDockPanel: NSPanel {
     let hostingView = NSHostingView(rootView: AnyView(EmptyView()))
+    /// Reports pointer movement over the window itself, where the global event
+    /// monitor sees nothing, so leaving the Dock is noticed at once.
+    let pointerView = PointerTrackingView()
 
     /// Called with +1 or -1 when the user swipes or ⌘-scrolls to switch profiles.
     var onSwitch: ((Int) -> Void)?
@@ -401,9 +450,34 @@ final class CustomDockPanel: NSPanel {
         acceptsMouseMovedEvents = true
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
-        contentView = hostingView
+        hostingView.frame = pointerView.bounds
+        hostingView.autoresizingMask = [.width, .height]
+        pointerView.addSubview(hostingView)
+        contentView = pointerView
     }
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+/// Container that reports every pointer movement over the window, including
+/// leaving it, through a tracking area that works while DockShift is not the
+/// active app.
+final class PointerTrackingView: NSView {
+    var onPointerEvent: (() -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseMoved(with event: NSEvent) { onPointerEvent?() }
+    override func mouseEntered(with event: NSEvent) { onPointerEvent?() }
+    override func mouseExited(with event: NSEvent) { onPointerEvent?() }
 }
