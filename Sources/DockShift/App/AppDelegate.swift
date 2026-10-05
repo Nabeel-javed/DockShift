@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         quitCleanlyOnSignals()
+        AppleDockSuppressor.startCrashHelper()
         statusItem = StatusItemController(store: store, settings: settings)
         customDock = CustomDockController(store: store, settings: settings)
 
@@ -32,10 +33,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 // One Dock at a time: Apple's stays out of sight while the Custom Dock replaces it.
                 if setup == .customMain {
-                    self.appleDock.suppress()
+                    self.appleDock.suppress(avoiding: self.settings.customDock.position)
                 } else {
                     self.appleDock.restore()
                 }
+            }
+            .store(in: &cancellables)
+        // Keep Apple's hidden Dock off whichever edge the Custom Dock moves to.
+        settings.$customDock
+            .map(\.position)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] position in
+                guard let self, self.settings.dockSetup == .customMain else { return }
+                self.appleDock.suppress(avoiding: position)
             }
             .store(in: &cancellables)
 

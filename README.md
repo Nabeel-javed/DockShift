@@ -11,7 +11,7 @@ Choose from the menu bar (**Use Original Dock** / **Use Custom Dock**) or in Set
 - **Original macOS Dock**: DockShift switches layouts of Apple's Dock. Widgets need the Custom Dock.
 - **Custom Dock**: DockShift's Dock replaces Apple's. Move the pointer to the screen edge and the Custom Dock appears instead. A checkbox keeps Apple's Dock visible as well, if you want both.
 
-macOS doesn't let apps remove its Dock: the same process runs Mission Control, the app switcher, Launchpad and Spaces, and macOS restarts it if it's killed. So while the Custom Dock is in use, DockShift keeps Apple's Dock out of sight: auto-hide with a reveal delay of over a day, no icons bouncing up through it, and if ⌘⌥D or System Settings turns hiding off, DockShift hides it again and toggles the Custom Dock's auto-hide instead. Your own Dock settings are saved first and put back when you switch to the original Dock or quit.
+macOS doesn't let apps remove its Dock: the same process runs Mission Control, the app switcher, Launchpad and Spaces, and macOS restarts it if it's killed. Auto-hiding it isn't enough either: a hidden Dock still slides in when the pointer reaches its edge, on top of a Custom Dock on the same edge. So while the Custom Dock is in use, DockShift moves Apple's Dock to a side edge the Custom Dock doesn't use, shrinks it, auto-hides it with long reveal and animation times, and stops icons popping out of it. If ⌘⌥D or System Settings turns hiding off, DockShift hides it again and toggles the Custom Dock's auto-hide instead. One side effect: minimized windows fly toward that side edge. Your own Dock settings are saved first and put back when you switch to the original Dock or quit, and a small helper process puts them back if DockShift crashes or is force-quit.
 
 ## macOS Dock profiles
 
@@ -60,10 +60,10 @@ All optional, asked for only when a feature needs them: **Screen Recording** (sm
 
 ## Troubleshooting
 
-**Apple's Dock is missing after DockShift crashed.** Quitting DockShift, even with `kill`, puts your Dock settings back, but a crash can't. Press ⌘⌥D to show Apple's Dock, or relaunch DockShift and choose *Use Original Dock* to restore everything. To reset by hand:
+**Apple's Dock is missing or small and on the side.** DockShift restores your Dock settings when it quits, even after a crash or Force Quit. If they still weren't restored, relaunch DockShift and choose *Use Original Dock*, which puts back your exact settings, or reset them to the macOS defaults by hand:
 
 ```sh
-defaults delete com.apple.dock autohide-delay; defaults delete com.apple.dock no-bouncing; defaults write com.apple.dock autohide -bool false; killall Dock
+for key in autohide autohide-delay autohide-time-modifier orientation tilesize launchanim no-bouncing; do defaults delete com.apple.dock $key 2>/dev/null; done; killall Dock
 ```
 
 ## Building
