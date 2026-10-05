@@ -8,6 +8,15 @@ struct DockLayout {
     let extraTiles: Int
     /// Longest the Dock may be along its edge before it scrolls.
     let maxLength: CGFloat
+    /// Widgets that asked to disappear for now (e.g. Now Playing with no player open).
+    var hiddenWidgetIDs: Set<UUID> = []
+
+    func isHidden(_ item: DockItem) -> Bool {
+        if case .widget(let widget) = item { return hiddenWidgetIDs.contains(widget.id) }
+        return false
+    }
+
+    var visibleItems: [DockItem] { items.filter { !isHidden($0) } }
 
     var iconSize: CGFloat { settings.iconSize }
     var gap: CGFloat { max(6, iconSize * 0.14) }
@@ -39,8 +48,9 @@ struct DockLayout {
 
     var contentLength: CGFloat {
         var total = padding * 2
-        let all = items.count + extraTiles
-        total += items.reduce(0) { $0 + length(of: $1) }
+        let visible = visibleItems
+        let all = visible.count + extraTiles
+        total += visible.reduce(0) { $0 + length(of: $1) }
         total += CGFloat(extraTiles) * iconSize
         if all > 1 { total += CGFloat(all - 1) * gap }
         return total

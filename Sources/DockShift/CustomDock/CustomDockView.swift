@@ -44,7 +44,9 @@ struct CustomDockView: View {
         let axis = layout.isVertical ? Axis.vertical : .horizontal
         return AxisStack(axis: axis, spacing: layout.gap) {
             ForEach(Array(profile.items.enumerated()), id: \.offset) { index, item in
-                DockTile(item: item, index: index, layout: layout, profile: profile)
+                if !layout.isHidden(item) {
+                    DockTile(item: item, index: index, layout: layout, profile: profile)
+                }
             }
             if layout.settings.showRunningApps {
                 ForEach(runningApps.unpinned(given: profile.items), id: \.processIdentifier) { app in

@@ -55,6 +55,12 @@ struct WidgetView: View {
         case .hydration: HydrationTile(context: context)
         case .calendar: CalendarTile(context: context)
         case .stickyNote: StickyNoteTile(context: context)
+        case .nowPlaying: NowPlayingTile(context: context)
+        case .battery: BatteryTile(context: context)
+        case .systemActivity: SystemActivityTile(context: context)
+        case .network: NetworkTile(context: context)
+        case .shortcut: ShortcutTile(context: context)
+        case .airDrop: AirDropTile(context: context)
         default: PlaceholderTile(context: context)
         }
     }
@@ -64,7 +70,7 @@ struct WidgetView: View {
 func widgetHasConfiguration(_ type: WidgetType) -> Bool {
     switch type {
     case .worldClock, .focusTimer, .timeProgress, .countdown, .alarm,
-         .reminders, .hydration, .calendar, .stickyNote:
+         .reminders, .hydration, .calendar, .stickyNote, .nowPlaying, .shortcut:
         return true
     default:
         return false
@@ -95,6 +101,8 @@ struct WidgetConfigView: View {
             case .hydration: HydrationConfig(context: context)
             case .calendar: CalendarConfig(context: context)
             case .stickyNote: StickyNoteConfig(context: context)
+            case .nowPlaying: NowPlayingConfig(context: context)
+            case .shortcut: ShortcutConfig(context: context)
             default: Text("Nothing to configure.").padding()
             }
         }

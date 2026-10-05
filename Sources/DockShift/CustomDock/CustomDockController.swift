@@ -28,6 +28,7 @@ final class CustomDockController {
             .map { _ in () }
             .merge(with: settings.$dockSetup.map { _ in () })
             .merge(with: runningApps.$running.map { _ in () })
+            .merge(with: NowPlayingController.shared.$isAnyPlayerRunning.map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.refresh() }
             .store(in: &cancellables)
@@ -65,12 +66,13 @@ final class CustomDockController {
 
         let dockSettings = settings.customDock
         let extra = dockSettings.showRunningApps ? runningApps.unpinned(given: profile.items).count : 0
-        let layout = DockLayout(
+        var layout = DockLayout(
             settings: dockSettings,
             items: profile.items,
             extraTiles: extra + (dockSettings.showTrash ? 1 : 0),
             maxLength: maxLength(on: screen, for: dockSettings)
         )
+        layout.hiddenWidgetIDs = hiddenWidgets(in: profile.items)
 
         let panel = self.panel ?? makePanel()
         panel.appearance = appearance(for: dockSettings.appearance)
@@ -90,6 +92,18 @@ final class CustomDockController {
         panel.setFrame(isHidden ? hiddenFrame(on: screen) : shownFrame, display: true)
         panel.orderFrontRegardless()
         updateHandle(on: screen)
+    }
+
+    /// Now Playing widgets set to hide while no music app is open.
+    private func hiddenWidgets(in items: [DockItem]) -> Set<UUID> {
+        guard !NowPlayingController.shared.isAnyPlayerRunning else { return [] }
+        return Set(items.compactMap { item in
+            if case .widget(let widget) = item, widget.type == .nowPlaying,
+               widget.settings["hideWhenClosed"] == "true" {
+                return widget.id
+            }
+            return nil
+        })
     }
 
     private func makePanel() -> CustomDockPanel {
