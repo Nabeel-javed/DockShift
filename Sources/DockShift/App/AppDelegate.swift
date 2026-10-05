@@ -14,9 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Apple's Dock auto-hide state before "Custom Dock as main Dock" changed it.
     private let savedAutoHideKey = "appleDockAutoHideBeforeCustomMain"
     private let savedDelayKey = "appleDockAutoHideDelayBeforeCustomMain"
-    /// How long the pointer must rest at the edge before Apple's hidden Dock
-    /// shows while the Custom Dock is the main Dock.
-    private let replacementRevealDelay = 1.5
+    /// Reveal delay given to Apple's hidden Dock while the Custom Dock is the
+    /// main Dock: long enough that the screen edge belongs to the Custom Dock.
+    private let replacementRevealDelay = 100_000.0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = StatusItemController(store: store, settings: settings)
@@ -68,8 +68,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let defaults = UserDefaults.standard
         if setup == .customMain {
             if defaults.object(forKey: savedAutoHideKey) == nil {
-                defaults.set(DockBridge.isAutoHidden, forKey: savedAutoHideKey)
+                let wasHidden = DockBridge.isAutoHidden
+                defaults.set(wasHidden, forKey: savedAutoHideKey)
                 defaults.set(DockBridge.autoHideDelay, forKey: savedDelayKey)
+                // Behave like the Dock being replaced: hidden if it was hidden.
+                settings.customDock.autoHide = wasHidden
             }
             store.noteDockRestart()
             DockTransition.perform { DockBridge.configureAutoHide(hidden: true, delay: replacementRevealDelay) }

@@ -59,6 +59,14 @@ Token activity is read from Claude Code (`~/.claude/projects`) and Codex (`~/.co
 
 All optional, asked for only when a feature needs them: **Screen Recording** (smooth switching, window previews), **Accessibility** (badges, minimized windows), **Calendars** and **Reminders**, **Automation** (Now Playing), **Location** (Weather). No account, no telemetry; profiles live in `~/Library/Application Support/DockShift`.
 
+## Troubleshooting
+
+**Apple's Dock stays hidden after DockShift crashed.** In "Use Custom Dock" mode DockShift hides Apple's Dock and gives it a very long reveal delay, restoring both when the mode changes or it quits. If it was force-quit, relaunch DockShift and pick *Use macOS Dock*, or run:
+
+```sh
+defaults delete com.apple.dock autohide-delay; defaults write com.apple.dock autohide -bool false; killall Dock
+```
+
 ## Building
 
 Requires macOS 13 Ventura or later and the Xcode Command Line Tools. Full Xcode is not needed.
