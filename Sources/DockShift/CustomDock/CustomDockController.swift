@@ -190,7 +190,7 @@ final class CustomDockController {
         let dockSettings = settings.customDock
 
         // Make room for Apple's auto-hidden Dock when it is about to appear on our edge.
-        if dockSettings.hideWhenMacOSDockAppears, appleDockOnSameEdge, DockBridge.isAutoHidden,
+        if dockSettings.hideWhenMacOSDockAppears, settings.dockSetup == .both, appleDockOnSameEdge, DockBridge.isAutoHidden,
            isAtVeryEdge(mouse, on: screen) {
             scheduleHide(after: 0)
             return

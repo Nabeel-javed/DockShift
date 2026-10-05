@@ -121,7 +121,7 @@ private struct GeneralSettingsView: View {
                 .pickerStyle(.radioGroup)
                 .labelsHidden()
                 Text(settings.dockSetup.usesCustomDock
-                     ? "Apple's Dock stays hidden while DockShift runs; moving the pointer to the edge shows the Custom Dock instead."
+                     ? "Apple's Dock is kept out of sight while DockShift runs (macOS doesn't let apps remove it) and comes back when you switch or quit. Moving the pointer to the edge shows the Custom Dock instead."
                      : "DockShift switches layouts of Apple's Dock. Widgets need the Custom Dock.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

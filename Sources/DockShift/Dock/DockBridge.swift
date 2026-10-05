@@ -52,28 +52,46 @@ enum DockBridge {
         return CFPreferencesCopyAppValue("autohide" as CFString, domain) as? Bool ?? false
     }
 
-    /// Seconds the pointer must rest at the edge before the hidden Dock appears
-    /// (Apple's default is 0; nil means the key is unset).
-    static var autoHideDelay: Double? {
+    /// A raw value from the Dock's preferences, or nil when the key is unset.
+    static func preference(_ key: String) -> NSObject? {
         CFPreferencesAppSynchronize(domain)
-        return CFPreferencesCopyAppValue("autohide-delay" as CFString, domain) as? Double
+        return CFPreferencesCopyAppValue(key as CFString, domain) as? NSObject
     }
 
-    /// Changes Apple's Dock auto-hide setting and reveal delay, restarting
-    /// the Dock once if anything changed.
-    static func configureAutoHide(hidden: Bool, delay: Double?) {
+    /// Writes Dock preferences (a nil value removes the key) and restarts the
+    /// Dock once if anything changed, since it reads most of them at launch.
+    static func setPreferences(_ values: [String: NSObject?]) {
+        CFPreferencesAppSynchronize(domain)
         var changed = false
-        if isAutoHidden != hidden {
-            CFPreferencesSetAppValue("autohide" as CFString, hidden as CFBoolean, domain)
-            changed = true
-        }
-        if autoHideDelay != delay {
-            CFPreferencesSetAppValue("autohide-delay" as CFString, delay.map { $0 as CFNumber }, domain)
+        for (key, value) in values {
+            let current = CFPreferencesCopyAppValue(key as CFString, domain) as? NSObject
+            guard current != value else { continue }
+            CFPreferencesSetAppValue(key as CFString, value, domain)
             changed = true
         }
         guard changed else { return }
         CFPreferencesAppSynchronize(domain)
         restartDock()
+    }
+
+    /// HIServices' private `CoreDockSetAutoHideEnabled`, which System Settings
+    /// uses to switch Dock hiding without a restart. Looked up at runtime so a
+    /// macOS without it falls back to restarting the Dock.
+    private static let coreDockSetAutoHide: (@convention(c) (DarwinBoolean) -> Void)? = {
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CoreDockSetAutoHideEnabled") else { return nil }
+        return unsafeBitCast(symbol, to: (@convention(c) (DarwinBoolean) -> Void).self)
+    }()
+
+    /// Turns Dock hiding on or off right away.
+    static func setAutoHiddenNow(_ hidden: Bool) {
+        guard let coreDockSetAutoHide else {
+            setPreferences(["autohide": NSNumber(value: hidden)])
+            return
+        }
+        coreDockSetAutoHide(DarwinBoolean(hidden))
+        // Keep the stored setting in step with the live one.
+        CFPreferencesSetAppValue("autohide" as CFString, NSNumber(value: hidden), domain)
+        CFPreferencesAppSynchronize(domain)
     }
 
     static func restartDock() {

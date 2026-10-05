@@ -4,15 +4,14 @@ Save and switch your macOS Dock layouts, or add a separate Dock with widgets.
 
 DockShift is an open-source alternative to [Dockset](https://dockset.app). Keep one Dock for work, one for gaming, one for reading, and swap between them from the menu bar, with a keyboard shortcut, or a trackpad swipe. Or run DockShift's own Custom Dock next to (or instead of) Apple's, with apps, folders, files, links and 25+ widgets.
 
-## Dock setup
+## Which Dock
 
-Pick how DockShift and Apple's Dock share the screen in Settings → Custom Dock:
+Choose from the menu bar (**Use Original Dock** / **Use Custom Dock**) or in Settings → General:
 
-| Setup | What it does |
-|---|---|
-| **macOS Dock only** | Switch layouts of Apple's Dock. No widgets. |
-| **macOS Dock + Custom Dock** | Keep Apple's Dock and add a separate Custom Dock on another edge. |
-| **Custom Dock as your main Dock** | Apple's Dock auto-hides while DockShift runs; the Custom Dock takes its place. |
+- **Original macOS Dock**: DockShift switches layouts of Apple's Dock. Widgets need the Custom Dock.
+- **Custom Dock**: DockShift's Dock replaces Apple's. Move the pointer to the screen edge and the Custom Dock appears instead. A checkbox keeps Apple's Dock visible as well, if you want both.
+
+macOS doesn't let apps remove its Dock: the same process runs Mission Control, the app switcher, Launchpad and Spaces, and macOS restarts it if it's killed. So while the Custom Dock is in use, DockShift keeps Apple's Dock out of sight: auto-hide with a reveal delay of over a day, no icons bouncing up through it, and if ⌘⌥D or System Settings turns hiding off, DockShift hides it again and toggles the Custom Dock's auto-hide instead. Your own Dock settings are saved first and put back when you switch to the original Dock or quit.
 
 ## macOS Dock profiles
 
@@ -61,10 +60,10 @@ All optional, asked for only when a feature needs them: **Screen Recording** (sm
 
 ## Troubleshooting
 
-**Apple's Dock stays hidden after DockShift crashed.** In "Use Custom Dock" mode DockShift hides Apple's Dock and gives it a very long reveal delay, restoring both when the mode changes or it quits. If it was force-quit, relaunch DockShift and pick *Use macOS Dock*, or run:
+**Apple's Dock is missing after DockShift crashed.** Quitting DockShift, even with `kill`, puts your Dock settings back, but a crash can't. Press ⌘⌥D to show Apple's Dock, or relaunch DockShift and choose *Use Original Dock* to restore everything. To reset by hand:
 
 ```sh
-defaults delete com.apple.dock autohide-delay; defaults write com.apple.dock autohide -bool false; killall Dock
+defaults delete com.apple.dock autohide-delay; defaults delete com.apple.dock no-bouncing; defaults write com.apple.dock autohide -bool false; killall Dock
 ```
 
 ## Building
@@ -85,9 +84,7 @@ Apple's Dock keeps its pinned items in the `persistent-apps` array of the `com.a
 
 ## Roadmap
 
-- macOS Focus mode integration (Focus Filters)
-- First-run walkthrough
-- Choosing the display for the Custom Dock
+- macOS Focus mode integration: the "Switch Dock" Focus Filter is written, but macOS only lists it once the build adds App Intents metadata, which needs Xcode.
 
 ## License
 

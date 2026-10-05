@@ -9,18 +9,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: StatusItemController?
     private var customDock: CustomDockController?
     private let watcher = DockPreferencesWatcher()
+    private let appleDock = AppleDockSuppressor()
+    private var signalSources: [DispatchSourceSignal] = []
     private var cancellables = Set<AnyCancellable>()
 
-    /// Apple's Dock auto-hide state before "Custom Dock as main Dock" changed it.
-    private let savedAutoHideKey = "appleDockAutoHideBeforeCustomMain"
-    private let savedDelayKey = "appleDockAutoHideDelayBeforeCustomMain"
-    /// Reveal delay given to Apple's hidden Dock while the Custom Dock is the
-    /// main Dock: long enough that the screen edge belongs to the Custom Dock.
-    private let replacementRevealDelay = 100_000.0
-
     func applicationDidFinishLaunching(_ notification: Notification) {
+        quitCleanlyOnSignals()
         statusItem = StatusItemController(store: store, settings: settings)
         customDock = CustomDockController(store: store, settings: settings)
+
+        appleDock.willRestartDock = { [weak self] in self?.store.noteDockRestart() }
+        // With the Custom Dock in use, ⌘⌥D ("Turn Dock hiding on/off") applies to it.
+        appleDock.hidingToggledExternally = { [weak self] in self?.settings.customDock.autoHide.toggle() }
 
         settings.$dockSetup
             .removeDuplicates()
@@ -30,7 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if setup.showsCustomDock, self.store.profiles(of: .customDock).isEmpty {
                     self.store.createFromCurrentDock(name: "Custom Dock", kind: .customDock)
                 }
-                self.applyAppleDockVisibility(for: setup)
+                // One Dock at a time: Apple's stays out of sight while the Custom Dock replaces it.
+                if setup == .customMain {
+                    self.appleDock.suppress()
+                } else {
+                    self.appleDock.restore()
+                }
             }
             .store(in: &cancellables)
 
@@ -60,35 +65,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        restoreAppleDockVisibility()
+        appleDock.restore()
     }
 
-    /// "Custom Dock as main Dock" auto-hides Apple's Dock while DockShift runs.
-    private func applyAppleDockVisibility(for setup: DockSetup) {
-        let defaults = UserDefaults.standard
-        if setup == .customMain {
-            if defaults.object(forKey: savedAutoHideKey) == nil {
-                let wasHidden = DockBridge.isAutoHidden
-                defaults.set(wasHidden, forKey: savedAutoHideKey)
-                defaults.set(DockBridge.autoHideDelay, forKey: savedDelayKey)
-                // Behave like the Dock being replaced: hidden if it was hidden.
-                settings.customDock.autoHide = wasHidden
+    /// `kill`, `pkill` and Ctrl-C would otherwise end the app without putting
+    /// Apple's Dock back; quit normally instead.
+    private func quitCleanlyOnSignals() {
+        for signalNumber in [SIGTERM, SIGINT, SIGHUP] {
+            signal(signalNumber, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
+            source.setEventHandler {
+                Task { @MainActor in NSApp.terminate(nil) }
             }
-            store.noteDockRestart()
-            DockTransition.perform { DockBridge.configureAutoHide(hidden: true, delay: replacementRevealDelay) }
-        } else {
-            restoreAppleDockVisibility()
+            source.resume()
+            signalSources.append(source)
         }
-    }
-
-    private func restoreAppleDockVisibility() {
-        let defaults = UserDefaults.standard
-        guard defaults.object(forKey: savedAutoHideKey) != nil else { return }
-        let previous = defaults.bool(forKey: savedAutoHideKey)
-        let previousDelay = defaults.object(forKey: savedDelayKey) as? Double
-        defaults.removeObject(forKey: savedAutoHideKey)
-        defaults.removeObject(forKey: savedDelayKey)
-        store.noteDockRestart()
-        DockTransition.perform { DockBridge.configureAutoHide(hidden: previous, delay: previousDelay) }
     }
 }
