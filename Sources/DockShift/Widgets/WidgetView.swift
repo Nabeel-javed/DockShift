@@ -64,7 +64,8 @@ struct WidgetView: View {
         case .weather: WeatherTile(context: context)
         case .stock: StockTile(context: context)
         case .watchlist: WatchlistTile(context: context)
-        default: PlaceholderTile(context: context)
+        case .stripe, .paddle, .shopify: BusinessTile(context: context)
+        case .aiUsage: AIUsageTile(context: context)
         }
     }
 }
@@ -74,7 +75,7 @@ func widgetHasConfiguration(_ type: WidgetType) -> Bool {
     switch type {
     case .worldClock, .focusTimer, .timeProgress, .countdown, .alarm,
          .reminders, .hydration, .calendar, .stickyNote, .nowPlaying, .shortcut,
-         .weather, .stock, .watchlist:
+         .weather, .stock, .watchlist, .stripe, .paddle, .shopify, .aiUsage:
         return true
     default:
         return false
@@ -109,6 +110,8 @@ struct WidgetConfigView: View {
             case .shortcut: ShortcutConfig(context: context)
             case .weather: WeatherConfig(context: context)
             case .stock, .watchlist: StockConfig(context: context)
+            case .stripe, .paddle, .shopify: BusinessConfig(context: context)
+            case .aiUsage: AIUsageConfig(context: context)
             default: Text("Nothing to configure.").padding()
             }
         }
