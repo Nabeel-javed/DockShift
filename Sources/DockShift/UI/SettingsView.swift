@@ -108,17 +108,29 @@ private struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Dock setup") {
-                Picker("Setup", selection: $settings.dockSetup) {
-                    ForEach(DockSetup.allCases) { setup in
-                        Text(setup.title).tag(setup)
+            Section("Which Dock to use") {
+                Picker("Dock", selection: Binding(
+                    get: { settings.dockSetup.usesCustomDock },
+                    set: { custom in
+                        settings.dockSetup = DockSetup.setup(custom: custom, keepingOriginal: settings.dockSetup == .both)
                     }
+                )) {
+                    Text("Original macOS Dock").tag(false)
+                    Text("Custom Dock").tag(true)
                 }
                 .pickerStyle(.radioGroup)
                 .labelsHidden()
-                Text(settings.dockSetup.detail)
+                Text(settings.dockSetup.usesCustomDock
+                     ? "Apple's Dock stays hidden while DockShift runs; moving the pointer to the edge shows the Custom Dock instead."
+                     : "DockShift switches layouts of Apple's Dock. Widgets need the Custom Dock.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if settings.dockSetup.usesCustomDock {
+                    Toggle("Keep the original Dock visible too", isOn: Binding(
+                        get: { settings.dockSetup == .both },
+                        set: { settings.dockSetup = $0 ? .both : .customMain }
+                    ))
+                }
             }
 
             Section {

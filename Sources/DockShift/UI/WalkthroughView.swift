@@ -39,14 +39,19 @@ struct WalkthroughView: View {
             Spacer()
             Text("Welcome to DockShift")
                 .font(.largeTitle.weight(.semibold))
-            Text("Choose how DockShift and Apple's Dock share your screen. You can change this any time in Settings.")
+            Text("Which Dock do you want to use? You can change this any time from the menu bar or Settings.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             VStack(spacing: 10) {
-                ForEach(DockSetup.allCases) { setup in
-                    SetupCard(setup: setup, selected: settings.dockSetup == setup) {
-                        settings.dockSetup = setup
-                    }
+                SetupCard(title: "Original macOS Dock",
+                          detail: "Keep Apple's Dock and switch between saved layouts of it.",
+                          selected: !settings.dockSetup.usesCustomDock) {
+                    settings.dockSetup = .macOSOnly
+                }
+                SetupCard(title: "Custom Dock",
+                          detail: "Replace Apple's Dock with DockShift's Dock: your apps, folders, files, links and widgets.",
+                          selected: settings.dockSetup.usesCustomDock) {
+                    settings.dockSetup = .customMain
                 }
             }
             Spacer()
@@ -152,7 +157,8 @@ struct WalkthroughView: View {
 }
 
 private struct SetupCard: View {
-    let setup: DockSetup
+    let title: String
+    let detail: String
     let selected: Bool
     let action: () -> Void
 
@@ -163,8 +169,8 @@ private struct SetupCard: View {
                     .foregroundStyle(selected ? Color.accentColor : Color.secondary)
                     .font(.title3)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(setup.title).font(.headline)
-                    Text(setup.detail).font(.callout).foregroundStyle(.secondary)
+                    Text(title).font(.headline)
+                    Text(detail).font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
             }

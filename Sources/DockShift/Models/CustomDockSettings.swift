@@ -34,6 +34,15 @@ enum DockSetup: String, Codable, CaseIterable, Identifiable {
     }
 
     var showsCustomDock: Bool { self != .macOSOnly }
+
+    /// The user-facing choice is binary: the original Dock or the Custom Dock.
+    var usesCustomDock: Bool { self != .macOSOnly }
+
+    /// Picks the setup for a choice, keeping "both" only when it was already on.
+    static func setup(custom: Bool, keepingOriginal: Bool) -> DockSetup {
+        guard custom else { return .macOSOnly }
+        return keepingOriginal ? .both : .customMain
+    }
 }
 
 enum DockPosition: String, Codable, CaseIterable, Identifiable {

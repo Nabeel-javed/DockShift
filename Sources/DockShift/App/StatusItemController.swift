@@ -75,11 +75,11 @@ final class StatusItemController: NSObject {
         let setupHeader = NSMenuItem(title: "Dock", action: nil, keyEquivalent: "")
         setupHeader.isEnabled = false
         menu.addItem(setupHeader)
-        for setup in DockSetup.allCases {
-            let item = NSMenuItem(title: setup.menuTitle, action: #selector(selectSetup(_:)), keyEquivalent: "")
+        for (title, custom) in [("Use Original Dock", false), ("Use Custom Dock", true)] {
+            let item = NSMenuItem(title: title, action: #selector(selectSetup(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = setup.rawValue
-            item.state = settings.dockSetup == setup ? .on : .off
+            item.representedObject = custom
+            item.state = settings.dockSetup.usesCustomDock == custom ? .on : .off
             item.indentationLevel = 1
             menu.addItem(item)
         }
@@ -121,8 +121,8 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func selectSetup(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let setup = DockSetup(rawValue: raw) else { return }
-        settings.dockSetup = setup
+        guard let custom = sender.representedObject as? Bool else { return }
+        settings.dockSetup = DockSetup.setup(custom: custom, keepingOriginal: settings.dockSetup == .both)
     }
 
     @objc private func openEditor() {
