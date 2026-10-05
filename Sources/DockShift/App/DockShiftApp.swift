@@ -12,6 +12,8 @@ enum DockShiftApp {
                     print("\(index + 1). \(app.label)  \(app.path)  [\(app.bundleIdentifier ?? "-")]")
                 case .spacer(let size):
                     print("\(index + 1). <\(size.rawValue) spacer>")
+                default:
+                    print("\(index + 1). <unsupported in macOS Dock>")
                 }
             }
             return

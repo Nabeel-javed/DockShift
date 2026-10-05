@@ -38,7 +38,7 @@ enum DockBridge {
 
     /// Replaces the pinned apps with `items` and restarts the Dock so it shows them.
     static func apply(_ items: [DockItem]) throws {
-        let entries = items.map { $0.dockEntry() }
+        let entries = items.compactMap { $0.dockEntry() }
         CFPreferencesSetAppValue(appsKey, entries as CFArray, domain)
         guard CFPreferencesAppSynchronize(domain) else {
             throw DockBridgeError.synchronizeFailed
@@ -89,10 +89,13 @@ extension DockItem {
         }
     }
 
-    /// Builds the `persistent-apps` entry for this item. The Dock fills in the
-    /// remaining keys (bookmark data, mod dates) itself on launch.
-    func dockEntry() -> [String: Any] {
+    /// Builds the `persistent-apps` entry for this item, or nil for item types
+    /// Apple's Dock cannot hold. The Dock fills in the remaining keys
+    /// (bookmark data, mod dates) itself on launch.
+    func dockEntry() -> [String: Any]? {
         switch self {
+        case .folder, .file, .link, .widget:
+            return nil
         case .spacer(.regular):
             return ["tile-type": "spacer-tile", "tile-data": [String: Any]()]
         case .spacer(.small):

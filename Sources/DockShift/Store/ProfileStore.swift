@@ -6,7 +6,10 @@ import Foundation
 @MainActor
 final class ProfileStore: ObservableObject {
     @Published private(set) var profiles: [DockProfile] = []
+    /// The macOS Dock profile currently applied to Apple's Dock.
     @Published private(set) var activeProfileID: UUID?
+    /// The Custom Dock profile currently shown in DockShift's own Dock.
+    @Published private(set) var activeCustomProfileID: UUID?
     @Published var lastError: String?
 
     /// When we last rewrote the Dock ourselves; used to ignore our own plist changes.
@@ -18,6 +21,7 @@ final class ProfileStore: ObservableObject {
         var version = 1
         var profiles: [DockProfile]
         var activeProfileID: UUID?
+        var activeCustomProfileID: UUID?
     }
 
     struct Backup: Codable {
@@ -40,8 +44,23 @@ final class ProfileStore: ObservableObject {
         profiles.first { $0.id == activeProfileID }
     }
 
+    var activeCustomProfile: DockProfile? {
+        profiles.first { $0.id == activeCustomProfileID }
+    }
+
     func profile(id: UUID) -> DockProfile? {
         profiles.first { $0.id == id }
+    }
+
+    func profiles(of kind: ProfileKind) -> [DockProfile] {
+        profiles.filter { $0.kind == kind }
+    }
+
+    func isActive(_ profile: DockProfile) -> Bool {
+        switch profile.kind {
+        case .macOSDock: return profile.id == activeProfileID
+        case .customDock: return profile.id == activeCustomProfileID
+        }
     }
 
     // MARK: - Creating and editing
@@ -58,9 +77,13 @@ final class ProfileStore: ObservableObject {
     }
 
     @discardableResult
-    func createEmpty(name: String) -> DockProfile {
-        let profile = DockProfile(name: uniqueName(name))
+    func createEmpty(name: String, kind: ProfileKind = .macOSDock) -> DockProfile {
+        let profile = DockProfile(name: uniqueName(name), kind: kind)
         profiles.append(profile)
+        // The first Custom Dock profile is shown right away; nothing to restart.
+        if kind == .customDock, activeCustomProfileID == nil {
+            activeCustomProfileID = profile.id
+        }
         save()
         return profile
     }
@@ -76,6 +99,7 @@ final class ProfileStore: ObservableObject {
     func delete(_ id: UUID) {
         profiles.removeAll { $0.id == id }
         if activeProfileID == id { activeProfileID = nil }
+        if activeCustomProfileID == id { activeCustomProfileID = nil }
         save()
     }
 
@@ -110,9 +134,16 @@ final class ProfileStore: ObservableObject {
     /// Mirrors the Settings toggle; the overlay also needs Screen Recording permission.
     var smoothSwitching = true
 
-    /// Writes the profile to Apple's Dock and restarts it.
+    /// Makes the profile active. macOS Dock profiles are written to Apple's
+    /// Dock, which is then restarted; Custom Dock profiles just swap in place.
     func apply(_ id: UUID) {
         guard let target = profile(id: id) else { return }
+        if target.kind == .customDock {
+            activeCustomProfileID = id
+            lastError = nil
+            save()
+            return
+        }
         lastAppliedAt = Date()
         do {
             if smoothSwitching {
@@ -184,10 +215,15 @@ final class ProfileStore: ObservableObject {
         else { return }
         profiles = persisted.profiles
         activeProfileID = persisted.activeProfileID
+        activeCustomProfileID = persisted.activeCustomProfileID
     }
 
     private func save() {
-        let persisted = Persisted(profiles: profiles, activeProfileID: activeProfileID)
+        let persisted = Persisted(
+            profiles: profiles,
+            activeProfileID: activeProfileID,
+            activeCustomProfileID: activeCustomProfileID
+        )
         do {
             let data = try ProfileStore.encoder.encode(persisted)
             try data.write(to: fileURL, options: .atomic)

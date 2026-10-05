@@ -43,17 +43,28 @@ final class StatusItemController: NSObject {
             empty.isEnabled = false
             menu.addItem(empty)
         } else {
-            for profile in store.profiles {
-                let item = NSMenuItem(title: profile.name, action: #selector(selectProfile(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = profile.id
-                item.state = profile.id == store.activeProfileID ? .on : .off
-                item.image = StatusItemController.dot(for: profile.color)
-                if let combo = profile.shortcut, let key = combo.menuKeyEquivalent {
-                    item.keyEquivalent = key
-                    item.keyEquivalentModifierMask = combo.modifierFlags
+            let macProfiles = store.profiles(of: .macOSDock)
+            let customProfiles = store.profiles(of: .customDock)
+            let showHeaders = !macProfiles.isEmpty && !customProfiles.isEmpty
+            for (kind, group) in [(ProfileKind.macOSDock, macProfiles), (.customDock, customProfiles)] where !group.isEmpty {
+                if showHeaders {
+                    let header = NSMenuItem(title: kind.title, action: nil, keyEquivalent: "")
+                    header.isEnabled = false
+                    menu.addItem(header)
                 }
-                menu.addItem(item)
+                for profile in group {
+                    let item = NSMenuItem(title: profile.name, action: #selector(selectProfile(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = profile.id
+                    item.state = store.isActive(profile) ? .on : .off
+                    item.image = StatusItemController.dot(for: profile.color)
+                    if showHeaders { item.indentationLevel = 1 }
+                    if let combo = profile.shortcut, let key = combo.menuKeyEquivalent {
+                        item.keyEquivalent = key
+                        item.keyEquivalentModifierMask = combo.modifierFlags
+                    }
+                    menu.addItem(item)
+                }
             }
         }
 
