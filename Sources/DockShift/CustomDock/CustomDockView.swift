@@ -98,7 +98,7 @@ private struct DockTile: View {
             case .spacer:
                 Color.clear
             case .widget(let widget):
-                WidgetTile(widget: widget, layout: layout, onRemove: remove)
+                WidgetTile(widget: widget, layout: layout, onRemove: remove, onUpdate: update)
             }
         }
         .frame(
@@ -110,6 +110,12 @@ private struct DockTile: View {
     private func remove() {
         store.updateItems(of: profile.id) { items in
             if items.indices.contains(index) { items.remove(at: index) }
+        }
+    }
+
+    private func update(_ widget: WidgetInstance) {
+        store.updateItems(of: profile.id) { items in
+            if items.indices.contains(index) { items[index] = .widget(widget) }
         }
     }
 }
@@ -387,47 +393,51 @@ private struct TrashTile: View {
     }
 }
 
-/// Container for a widget. Real widget content arrives with each widget.
+/// Container for a widget: background, layout menu and configuration popover.
 private struct WidgetTile: View {
     let widget: WidgetInstance
     let layout: DockLayout
     let onRemove: () -> Void
+    let onUpdate: (WidgetInstance) -> Void
+    @State private var showConfig = false
+
+    private var context: WidgetContext {
+        WidgetContext(instance: widget, iconSize: layout.iconSize, isVertical: layout.isVertical, update: onUpdate)
+    }
 
     var body: some View {
-        WidgetView(instance: widget, iconSize: layout.iconSize)
+        WidgetView(context: context)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: layout.iconSize * 0.22, style: .continuous)
                     .fill(.primary.opacity(0.07))
             )
             .contextMenu {
+                if widgetHasConfiguration(widget.type) {
+                    Button("Configure widget…") { showConfig = true }
+                }
+                if widget.type.variants.count > 1 {
+                    Menu("Layout") {
+                        ForEach(widget.type.variants, id: \.id) { variant in
+                            Button {
+                                var changed = widget
+                                changed.variant = variant.id
+                                onUpdate(changed)
+                            } label: {
+                                if variant.id == widget.variant {
+                                    Label(variant.title, systemImage: "checkmark")
+                                } else {
+                                    Text(variant.title)
+                                }
+                            }
+                        }
+                    }
+                }
+                Divider()
                 Button("Remove from Dock", action: onRemove)
             }
-    }
-}
-
-/// Renders a widget in the Dock. Each widget family gets its own view as it is
-/// implemented; the rest show a labelled placeholder.
-struct WidgetView: View {
-    let instance: WidgetInstance
-    let iconSize: CGFloat
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: instance.type.symbol)
-                .font(.system(size: iconSize * 0.34))
-                .foregroundStyle(.primary.opacity(0.7))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(instance.type.title)
-                    .font(.system(size: max(10, iconSize * 0.2), weight: .semibold))
-                if instance.type.variants.count > 1 {
-                    Text(instance.variantTitle)
-                        .font(.system(size: max(8, iconSize * 0.15)))
-                        .foregroundStyle(.secondary)
-                }
+            .popover(isPresented: $showConfig) {
+                WidgetConfigView(context: context)
             }
-            .lineLimit(1)
-        }
-        .padding(.horizontal, 8)
     }
 }

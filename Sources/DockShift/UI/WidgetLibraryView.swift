@@ -110,23 +110,13 @@ private struct WidgetCard: View {
     }
 }
 
-/// Static preview of a widget for the library. Real widgets replace this as
-/// they are implemented.
+/// Preview of a widget for the library: the real tile with sample data.
 struct WidgetPreview: View {
     let instance: WidgetInstance
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: instance.type.symbol)
-                .font(.system(size: 20))
-                .foregroundStyle(Color.accentColor)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(instance.type.title).font(.caption.bold())
-                if instance.type.variants.count > 1 {
-                    Text(instance.variantTitle).font(.caption2).foregroundStyle(.secondary)
-                }
-            }
-        }
-        .padding(8)
+        WidgetView(context: WidgetContext(instance: instance, iconSize: 48, isPreview: true))
+            .frame(width: min(180, CGFloat(instance.widthUnits) * 52), height: 52)
+            .allowsHitTesting(false)
     }
 }
