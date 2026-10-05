@@ -1,0 +1,126 @@
+import AppKit
+import Combine
+
+/// The menu bar icon and its menu: one entry per saved Dock, then the app commands.
+@MainActor
+final class StatusItemController: NSObject {
+    private let statusItem: NSStatusItem
+    private let store: ProfileStore
+    private let settings: AppSettings
+    private var cancellables = Set<AnyCancellable>()
+
+    init(store: ProfileStore, settings: AppSettings) {
+        self.store = store
+        self.settings = settings
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        super.init()
+
+        if let button = statusItem.button {
+            button.image = NSImage(systemSymbolName: "dock.rectangle", accessibilityDescription: "DockShift")
+            button.imagePosition = .imageLeading
+        }
+
+        Publishers.CombineLatest3(store.$profiles, store.$activeProfileID, settings.$showProfileNameInMenuBar)
+            .sink { [weak self] _ in self?.refresh() }
+            .store(in: &cancellables)
+        refresh()
+    }
+
+    private func refresh() {
+        if settings.showProfileNameInMenuBar, let active = store.activeProfile {
+            statusItem.button?.title = " " + active.name
+        } else {
+            statusItem.button?.title = ""
+        }
+        statusItem.menu = buildMenu()
+    }
+
+    private func buildMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        if store.profiles.isEmpty {
+            let empty = NSMenuItem(title: "No saved Docks", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        } else {
+            for profile in store.profiles {
+                let item = NSMenuItem(title: profile.name, action: #selector(selectProfile(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = profile.id
+                item.state = profile.id == store.activeProfileID ? .on : .off
+                item.image = StatusItemController.dot(for: profile.color)
+                if let combo = profile.shortcut, let key = combo.menuKeyEquivalent {
+                    item.keyEquivalent = key
+                    item.keyEquivalentModifierMask = combo.modifierFlags
+                }
+                menu.addItem(item)
+            }
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(command("Manage Docks…", #selector(openEditor), key: "m"))
+        menu.addItem(command("Save Current Dock as New Profile…", #selector(saveCurrentDock), key: "s"))
+        menu.addItem(.separator())
+        menu.addItem(command("Settings…", #selector(openSettings), key: ","))
+        menu.addItem(command("About DockShift", #selector(showAbout), key: ""))
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "Quit DockShift", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(quit)
+        return menu
+    }
+
+    private func command(_ title: String, _ action: Selector, key: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        return item
+    }
+
+    private static func dot(for color: ProfileColor) -> NSImage {
+        let size = NSSize(width: 10, height: 10)
+        let image = NSImage(size: size, flipped: false) { rect in
+            color.nsColor.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    // MARK: - Actions
+
+    @objc private func selectProfile(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UUID else { return }
+        store.apply(id)
+    }
+
+    @objc private func openEditor() {
+        WindowManager.shared.showEditor(store: store, settings: settings)
+    }
+
+    @objc private func openSettings() {
+        WindowManager.shared.showSettings(store: store, settings: settings)
+    }
+
+    @objc private func saveCurrentDock() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Save Current Dock"
+        alert.informativeText = "The apps and spacers pinned to your Dock right now will be saved as a new profile."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = "Name"
+        field.stringValue = store.profiles.isEmpty ? "Everyday" : "Dock \(store.profiles.count + 1)"
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        store.createFromCurrentDock(name: field.stringValue)
+    }
+
+    @objc private func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(nil)
+    }
+}
