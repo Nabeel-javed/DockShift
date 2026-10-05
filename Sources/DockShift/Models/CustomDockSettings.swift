@@ -52,6 +52,8 @@ enum DockAppearance: String, Codable, CaseIterable, Identifiable {
 /// Appearance and behaviour of the Custom Dock.
 struct CustomDockSettings: Codable, Equatable {
     var position: DockPosition = .bottom
+    /// Localized name of the display to use; empty means the main display.
+    var displayName: String = ""
     var appearance: DockAppearance = .system
     var material: DockMaterial = .frosted
     /// 0...1, mapped to an icon size of 36...96 points.
@@ -72,7 +74,7 @@ struct CustomDockSettings: Codable, Equatable {
     init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case position, appearance, material, size, autoHide, showHandleWhenHidden, desktopWidgetMode
+        case position, displayName, appearance, material, size, autoHide, showHandleWhenHidden, desktopWidgetMode
         case hideWhenMacOSDockAppears, showRunningApps, showMinimizedWindows, showTrash
         case clickFocusedAppToMinimize, showAppBadges, magnification
     }
@@ -81,6 +83,7 @@ struct CustomDockSettings: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         position = try c.decodeIfPresent(DockPosition.self, forKey: .position) ?? position
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? displayName
         appearance = try c.decodeIfPresent(DockAppearance.self, forKey: .appearance) ?? appearance
         material = try c.decodeIfPresent(DockMaterial.self, forKey: .material) ?? material
         size = try c.decodeIfPresent(Double.self, forKey: .size) ?? size

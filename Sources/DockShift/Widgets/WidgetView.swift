@@ -151,19 +151,6 @@ struct WidgetLabel<Leading: View>: View {
     }
 }
 
-struct PlaceholderTile: View {
-    let context: WidgetContext
-
-    var body: some View {
-        WidgetLabel(context: context, value: context.instance.type.title,
-                    caption: context.instance.type.variants.count > 1 ? context.instance.variantTitle : "Coming soon") {
-            Image(systemName: context.instance.type.symbol)
-                .font(.system(size: context.iconSize * 0.34))
-                .foregroundStyle(.primary.opacity(0.7))
-        }
-    }
-}
-
 /// A circular progress ring used by timers and percentages.
 struct RingView: View {
     var progress: Double

@@ -50,7 +50,13 @@ final class CustomDockController {
         settings.dockSetup.showsCustomDock && store.activeCustomProfile != nil
     }
 
-    private var screen: NSScreen? { NSScreen.screens.first }
+    private var screen: NSScreen? {
+        let wanted = settings.customDock.displayName
+        if !wanted.isEmpty, let match = NSScreen.screens.first(where: { $0.localizedName == wanted }) {
+            return match
+        }
+        return NSScreen.screens.first
+    }
 
     private var autoHideActive: Bool {
         settings.customDock.autoHide && !settings.customDock.desktopWidgetMode

@@ -62,6 +62,14 @@ private struct CustomDockSettingsView: View {
                     ForEach(DockPosition.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                if NSScreen.screens.count > 1 {
+                    Picker("Display", selection: $settings.customDock.displayName) {
+                        Text("Main display").tag("")
+                        ForEach(NSScreen.screens, id: \.localizedName) { screen in
+                            Text(screen.localizedName).tag(screen.localizedName)
+                        }
+                    }
+                }
                 Picker("Appearance", selection: $settings.customDock.appearance) {
                     ForEach(DockAppearance.allCases) { Text($0.title).tag($0) }
                 }
