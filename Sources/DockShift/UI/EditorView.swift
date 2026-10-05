@@ -158,6 +158,9 @@ private struct ProfileDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            DockPreviewStrip(items: items.map(\.item), kind: profile.kind)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
             Divider()
             itemList
             Divider()
