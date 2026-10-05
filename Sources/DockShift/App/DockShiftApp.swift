@@ -10,7 +10,8 @@ enum DockShiftApp {
             let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
                 .filter { $0.processIdentifier != getpid() && !$0.isTerminated }
             if others.isEmpty {
-                AppleDockSuppressor.restoreSavedState()
+                // No animation: this runs unattended and must simply work.
+                AppleDockSuppressor.restoreSavedState(animated: false)
             }
             return
         }

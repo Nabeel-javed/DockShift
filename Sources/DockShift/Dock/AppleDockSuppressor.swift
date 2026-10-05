@@ -10,17 +10,17 @@ import Foundation
 /// their shared edge. So while suppressing, DockShift moves Apple's Dock to a
 /// side edge the Custom Dock doesn't use, shrinks it, auto-hides it with long
 /// reveal and animation times, and stops icons popping out of it. If ⌘⌥D or
-/// System Settings turns hiding off, it is hidden again within a second.
+/// System Settings shows it again, it is hidden again within a second.
 ///
 /// The user's own values are saved before the first change and put back by
-/// `restore()`; a helper process puts them back if DockShift crashes or is
-/// force-quit.
+/// `restore`; a helper process puts them back if DockShift crashes or is
+/// force-quit. Every change runs in order on `DockBridge.queue`.
 @MainActor
 final class AppleDockSuppressor {
-    /// Called just before DockShift restarts Apple's Dock.
+    /// Called just before DockShift changes Apple's Dock.
     var willRestartDock: () -> Void = {}
-    /// Called after ⌘⌥D or System Settings turned Dock hiding off and Apple's
-    /// Dock was hidden again.
+    /// Called after ⌘⌥D or System Settings showed Apple's Dock while it was
+    /// suppressed (it is hidden again right away).
     var hidingToggledExternally: () -> Void = {}
 
     private nonisolated static let savedStateKey = "appleDockSavedState"
@@ -47,31 +47,54 @@ final class AppleDockSuppressor {
     }
 
     private var watchdog: Timer?
+    /// Changes queued on `DockBridge.queue` and not yet finished.
+    private var pendingChanges = 0
 
     /// Hides Apple's Dock on the side away from a Custom Dock on `edge`.
     func suppress(avoiding edge: DockPosition) {
-        // Save the user's own value of every key before changing it, once.
-        var state = Self.savedState() ?? (keys: [], values: [:])
-        for key in Self.managedKeys where !state.keys.contains(key) {
-            state.keys.append(key)
-            if let value = DockBridge.preference(key) { state.values[key] = value }
-        }
-        Self.saveState(state)
-
-        willRestartDock()
-        DockTransition.perform { DockBridge.setPreferences(Self.suppressedValues(avoiding: edge)) }
+        enqueue { Self.performSuppress(avoiding: edge) }
         startWatchdog()
     }
 
-    func restore() {
+    /// Puts the user's Dock settings back. With `wait`, returns only once done
+    /// (used while quitting).
+    func restore(wait: Bool = false) {
         watchdog?.invalidate()
         watchdog = nil
-        guard Self.savedState() != nil else { return }
+        if wait {
+            willRestartDock()
+            DockBridge.queue.sync { Self.restoreSavedState() }
+        } else {
+            enqueue { Self.restoreSavedState() }
+        }
+    }
+
+    private func enqueue(_ change: @escaping @Sendable () -> Void) {
         willRestartDock()
-        Self.restoreSavedState()
+        pendingChanges += 1
+        DockBridge.queue.async { [weak self] in
+            change()
+            Task { @MainActor in
+                self?.pendingChanges -= 1
+                self?.willRestartDock()
+            }
+        }
     }
 
     // MARK: - Saved state
+
+    /// Saves the user's own value of every managed key before the first change,
+    /// then applies the suppressed values. Runs on `DockBridge.queue`, so the
+    /// values it saves are never ones a pending change is about to replace.
+    private nonisolated static func performSuppress(avoiding edge: DockPosition) {
+        var state = savedState() ?? (keys: [], values: [:])
+        for key in managedKeys where !state.keys.contains(key) {
+            state.keys.append(key)
+            if let value = DockBridge.preference(key) { state.values[key] = value }
+        }
+        saveState(state)
+        DockBridge.applyOutOfSight(suppressedValues(avoiding: edge))
+    }
 
     /// The keys DockShift changed and their original values; a key listed
     /// without a value was unset.
@@ -87,16 +110,16 @@ final class AppleDockSuppressor {
         CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
     }
 
-    /// Puts back the user's saved Dock settings, if any. Also used by the
-    /// crash helper, where no app is running.
-    nonisolated static func restoreSavedState() {
+    /// Puts back the user's saved Dock settings, if any. Also used by the crash
+    /// helper (`animated: false`), where no app is running.
+    nonisolated static func restoreSavedState(animated: Bool = true) {
         guard let state = savedState() else { return }
         var values: [String: NSObject?] = [:]
         for key in state.keys {
             // updateValue keeps nil entries, which remove keys that were unset.
             values.updateValue(state.values[key] as? NSObject, forKey: key)
         }
-        DockBridge.setPreferences(values)
+        DockBridge.applyOutOfSight(values, animated: animated)
         UserDefaults.standard.removeObject(forKey: savedStateKey)
         CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
     }
@@ -127,10 +150,12 @@ final class AppleDockSuppressor {
         }
     }
 
-    /// ⌘⌥D and System Settings switch Dock hiding live; switch it straight back.
+    /// ⌘⌥D and System Settings show the Dock live; hide it straight away again.
     private func keepHidden() {
-        guard Self.savedState() != nil, !DockBridge.isAutoHidden else { return }
-        DockBridge.setAutoHiddenNow(true)
+        guard pendingChanges == 0, Self.savedState() != nil else { return }
+        let hidden = DockBridge.isHiddenLive ?? DockBridge.isAutoHidden
+        guard !hidden else { return }
+        enqueue { DockBridge.rehide() }
         hidingToggledExternally()
     }
 }

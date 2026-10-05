@@ -83,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        appleDock.restore()
+        appleDock.restore(wait: true)
     }
 
     /// `kill`, `pkill` and Ctrl-C would otherwise end the app without putting

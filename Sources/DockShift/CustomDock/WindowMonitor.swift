@@ -49,7 +49,7 @@ final class WindowMonitor: ObservableObject {
                 .autoconnect()
                 .sink { [weak self] _ in self?.poll() }
         }
-        if windows, thumbnailTimer == nil, DockTransition.hasScreenCapturePermission {
+        if windows, thumbnailTimer == nil, ScreenCapture.isAllowed {
             captureThumbnails()
             thumbnailTimer = Timer.publish(every: 8, on: .main, in: .common)
                 .autoconnect()

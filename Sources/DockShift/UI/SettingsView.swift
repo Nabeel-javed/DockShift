@@ -40,6 +40,35 @@ private struct AccessibilityStatusRow: View {
     }
 }
 
+/// Screen Recording lets DockShift keep previews of windows before they are minimized.
+private struct ScreenRecordingStatusRow: View {
+    @State private var granted = ScreenCapture.isAllowed
+
+    var body: some View {
+        HStack {
+            if granted {
+                Label("Screen Recording access granted", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Label("Window previews need Screen Recording access", systemImage: "exclamationmark.circle")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Grant Access…") {
+                    ScreenCapture.request()
+                    granted = ScreenCapture.isAllowed
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+        }
+        .font(.caption)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            granted = ScreenCapture.isAllowed
+        }
+    }
+}
+
 private struct CustomDockSettingsView: View {
     @EnvironmentObject private var settings: AppSettings
 
@@ -91,6 +120,9 @@ private struct CustomDockSettingsView: View {
                 Toggle("Click focused app to minimize", isOn: $settings.customDock.clickFocusedAppToMinimize)
                 Toggle("Show app badges", isOn: $settings.customDock.showAppBadges)
                 AccessibilityStatusRow()
+                if settings.customDock.showMinimizedWindows {
+                    ScreenRecordingStatusRow()
+                }
                 Text("Minimized windows and badges use Accessibility access. Window previews also need Screen Recording.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -104,7 +136,6 @@ private struct GeneralSettingsView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var store: ProfileStore
     @State private var backupMessage: String?
-    @State private var screenCaptureGranted = DockTransition.hasScreenCapturePermission
 
     var body: some View {
         Form {
@@ -147,23 +178,7 @@ private struct GeneralSettingsView: View {
 
             Section("Switching") {
                 Toggle("Smooth Dock switching", isOn: $settings.smoothSwitching)
-                HStack {
-                    if screenCaptureGranted {
-                        Label("Screen Recording access granted", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Label("Needs Screen Recording access", systemImage: "exclamationmark.circle")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Grant Access…") {
-                            DockTransition.requestScreenCapturePermission()
-                            screenCaptureGranted = DockTransition.hasScreenCapturePermission
-                            openScreenRecordingSettings()
-                        }
-                    }
-                }
-                .font(.caption)
-                Text("Hides the flicker while the Dock restarts by freezing a snapshot of it. Without Screen Recording access, switching still works but is not smooth.")
+                Text("Apple's Dock slides out and back in while it changes, instead of flashing. The first time, macOS asks to let DockShift control System Events, which does the sliding.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -185,15 +200,6 @@ private struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            screenCaptureGranted = DockTransition.hasScreenCapturePermission
-        }
-    }
-
-    private func openScreenRecordingSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     private func backUp() {

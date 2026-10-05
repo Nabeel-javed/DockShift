@@ -1,26 +1,20 @@
 import AppKit
 import Foundation
 
-enum DockBridgeError: LocalizedError {
-    case synchronizeFailed
-
-    var errorDescription: String? {
-        switch self {
-        case .synchronizeFailed:
-            return "macOS refused to save the Dock preferences."
-        }
-    }
-}
-
-/// Reads and writes Apple's Dock layout.
+/// Reads and writes Apple's Dock settings and layout.
 ///
 /// The Dock keeps its pinned items in the `persistent-apps` array of the
-/// `com.apple.dock` preference domain. Writing goes through `cfprefsd` via
-/// CFPreferences (the same route `defaults write` takes); the Dock only
-/// re-reads the array when it relaunches, hence `killall Dock`.
+/// `com.apple.dock` preference domain, next to settings such as `autohide`.
+/// Writing goes through `cfprefsd` via CFPreferences (the same route
+/// `defaults write` takes); the Dock reads most of them only when it
+/// relaunches, hence `killall Dock`.
 enum DockBridge {
     private static let domain = "com.apple.dock" as CFString
     private static let appsKey = "persistent-apps" as CFString
+
+    /// Serializes everything that restarts the Dock, so overlapping requests
+    /// (fast switching, quitting mid-switch) apply in order.
+    static let queue = DispatchQueue(label: "com.dockshift.dock-changes")
 
     static var preferencesFileURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -36,14 +30,9 @@ enum DockBridge {
         return raw.compactMap(DockItem.init(dockEntry:))
     }
 
-    /// Replaces the pinned apps with `items` and restarts the Dock so it shows them.
-    static func apply(_ items: [DockItem]) throws {
-        let entries = items.compactMap { $0.dockEntry() }
-        CFPreferencesSetAppValue(appsKey, entries as CFArray, domain)
-        guard CFPreferencesAppSynchronize(domain) else {
-            throw DockBridgeError.synchronizeFailed
-        }
-        restartDock()
+    /// The `persistent-apps` value for a layout.
+    static func persistentApps(for items: [DockItem]) -> NSArray {
+        items.compactMap { $0.dockEntry() } as NSArray
     }
 
     /// Whether Apple's Dock is set to auto-hide.
@@ -59,39 +48,11 @@ enum DockBridge {
     }
 
     /// Writes Dock preferences (a nil value removes the key) and restarts the
-    /// Dock once if anything changed, since it reads most of them at launch.
+    /// Dock once if anything changed.
     static func setPreferences(_ values: [String: NSObject?]) {
-        CFPreferencesAppSynchronize(domain)
-        var changed = false
-        for (key, value) in values {
-            let current = CFPreferencesCopyAppValue(key as CFString, domain) as? NSObject
-            guard current != value else { continue }
-            CFPreferencesSetAppValue(key as CFString, value, domain)
-            changed = true
-        }
-        guard changed else { return }
-        CFPreferencesAppSynchronize(domain)
+        guard hasChanges(values) else { return }
+        write(values)
         restartDock()
-    }
-
-    /// HIServices' private `CoreDockSetAutoHideEnabled`, which System Settings
-    /// uses to switch Dock hiding without a restart. Looked up at runtime so a
-    /// macOS without it falls back to restarting the Dock.
-    private static let coreDockSetAutoHide: (@convention(c) (DarwinBoolean) -> Void)? = {
-        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CoreDockSetAutoHideEnabled") else { return nil }
-        return unsafeBitCast(symbol, to: (@convention(c) (DarwinBoolean) -> Void).self)
-    }()
-
-    /// Turns Dock hiding on or off right away.
-    static func setAutoHiddenNow(_ hidden: Bool) {
-        guard let coreDockSetAutoHide else {
-            setPreferences(["autohide": NSNumber(value: hidden)])
-            return
-        }
-        coreDockSetAutoHide(DarwinBoolean(hidden))
-        // Keep the stored setting in step with the live one.
-        CFPreferencesSetAppValue("autohide" as CFString, NSNumber(value: hidden), domain)
-        CFPreferencesAppSynchronize(domain)
     }
 
     static func restartDock() {
@@ -100,6 +61,130 @@ enum DockBridge {
         process.arguments = ["Dock"]
         try? process.run()
         process.waitUntilExit()
+    }
+
+    // MARK: - Changes without the pop
+
+    /// Applies Dock preferences that need a restart without the Dock popping:
+    /// a Dock on screen slides out first, restarts out of sight, and slides
+    /// back in if it should end up visible. Takes a second or two, so call it
+    /// on `queue`. Without the live slide (System Events not allowed), it
+    /// falls back to a plain restart.
+    static func applyOutOfSight(_ values: [String: NSObject?], animated: Bool = true) {
+        guard hasChanges(values) else { return }
+        // The stored hiding setting to end with: the new one if given, else the current one.
+        let finalAutoHide: NSObject? = values.keys.contains("autohide")
+            ? (values["autohide"] ?? nil)
+            : preference("autohide")
+        let endsVisible = (finalAutoHide as? NSNumber)?.boolValue != true
+
+        guard animated, slide(hidden: true) else {
+            setPreferences(values)
+            return
+        }
+        // Restart hidden, so whatever changes happens out of sight.
+        var hiddenValues = values
+        hiddenValues["autohide"] = NSNumber(value: true)
+        write(hiddenValues)
+        restartDockAndWait()
+
+        if endsVisible && !slide(hidden: false) {
+            // The new Dock didn't slide in; bring it back with a restart instead.
+            write(["autohide": finalAutoHide])
+            restartDock()
+            return
+        }
+        write(["autohide": finalAutoHide])
+    }
+
+    /// Hides the Dock again after ⌘⌥D or System Settings showed it: live if
+    /// System Events is allowed, otherwise with a restart.
+    static func rehide() {
+        if slide(hidden: true) { return }
+        setPreferences(["autohide": NSNumber(value: true)])
+    }
+
+    /// HIServices' private `CoreDockGetAutoHideEnabled`: whether the running
+    /// Dock is hiding. (Its setter is refused to apps outside Apple.)
+    private static let coreDockGetAutoHide: (@convention(c) () -> DarwinBoolean)? = {
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CoreDockGetAutoHideEnabled") else { return nil }
+        return unsafeBitCast(symbol, to: (@convention(c) () -> DarwinBoolean).self)
+    }()
+
+    /// Whether the running Dock is hidden right now, which can differ from the
+    /// stored setting; nil when that can't be asked.
+    static var isHiddenLive: Bool? {
+        coreDockGetAutoHide.map { $0().boolValue }
+    }
+
+    /// Shows or hides the running Dock with its own slide animation, through
+    /// System Events (the first use asks the user to allow it). Waits for the
+    /// slide to finish; returns whether the Dock reached the requested state.
+    @discardableResult
+    private static func slide(hidden: Bool) -> Bool {
+        guard let isHidden = isHiddenLive else { return false }
+        if isHidden == hidden { return true }
+        let script = Process()
+        script.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        script.arguments = ["-e", "tell application \"System Events\" to set autohide of dock preferences to \(hidden)"]
+        script.standardOutput = FileHandle.nullDevice
+        script.standardError = FileHandle.nullDevice
+        guard (try? script.run()) != nil else { return false }
+        script.waitUntilExit()
+        guard script.terminationStatus == 0 else { return false }
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if isHiddenLive == hidden {
+                Thread.sleep(forTimeInterval: 0.55)
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return false
+    }
+
+    /// Restarts the Dock, whose stored settings say hidden, and waits until the
+    /// new Dock is up and reports itself hidden (at most three seconds).
+    private static func restartDockAndWait() {
+        let previous = currentDockPID()
+        restartDock()
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            if let pid = currentDockPID(), pid != previous, isHiddenLive == true {
+                Thread.sleep(forTimeInterval: 0.2)
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+    }
+
+    private static func currentDockPID() -> pid_t? {
+        let pgrep = Process()
+        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        pgrep.arguments = ["-U", String(getuid()), "-x", "Dock"]
+        let pipe = Pipe()
+        pgrep.standardOutput = pipe
+        pgrep.standardError = FileHandle.nullDevice
+        guard (try? pgrep.run()) != nil else { return nil }
+        pgrep.waitUntilExit()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        return output.split(separator: "\n").first.flatMap { pid_t($0) }
+    }
+
+    // MARK: - Writing
+
+    private static func hasChanges(_ values: [String: NSObject?]) -> Bool {
+        CFPreferencesAppSynchronize(domain)
+        return values.contains { key, value in
+            (CFPreferencesCopyAppValue(key as CFString, domain) as? NSObject) != value
+        }
+    }
+
+    private static func write(_ values: [String: NSObject?]) {
+        for (key, value) in values {
+            CFPreferencesSetAppValue(key as CFString, value, domain)
+        }
+        CFPreferencesAppSynchronize(domain)
     }
 }
 

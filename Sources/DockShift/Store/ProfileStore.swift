@@ -160,17 +160,15 @@ final class ProfileStore: ObservableObject {
             return
         }
         lastAppliedAt = Date()
-        do {
-            if smoothSwitching {
-                try DockTransition.perform { try DockBridge.apply(target.items) }
-            } else {
-                try DockBridge.apply(target.items)
-            }
-            activeProfileID = id
-            lastError = nil
-            save()
-        } catch {
-            lastError = error.localizedDescription
+        activeProfileID = id
+        lastError = nil
+        save()
+        // The Dock slides out, restarts with the new layout out of sight, and slides back in.
+        let items = target.items
+        let animated = smoothSwitching
+        DockBridge.queue.async { [weak self] in
+            DockBridge.applyOutOfSight(["persistent-apps": DockBridge.persistentApps(for: items)], animated: animated)
+            Task { @MainActor in self?.noteDockRestart() }
         }
     }
 
