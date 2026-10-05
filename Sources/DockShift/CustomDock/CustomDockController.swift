@@ -29,6 +29,7 @@ final class CustomDockController {
             .merge(with: settings.$dockSetup.map { _ in () })
             .merge(with: runningApps.$running.map { _ in () })
             .merge(with: NowPlayingController.shared.$isAnyPlayerRunning.map { _ in () })
+            .merge(with: WindowMonitor.shared.$minimized.map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.refresh() }
             .store(in: &cancellables)
@@ -73,6 +74,8 @@ final class CustomDockController {
             maxLength: maxLength(on: screen, for: dockSettings)
         )
         layout.hiddenWidgetIDs = hiddenWidgets(in: profile.items)
+        WindowMonitor.shared.configure(windows: dockSettings.showMinimizedWindows, badges: dockSettings.showAppBadges)
+        layout.minimizedTiles = dockSettings.showMinimizedWindows ? WindowMonitor.shared.minimized.count : 0
 
         let panel = self.panel ?? makePanel()
         panel.appearance = appearance(for: dockSettings.appearance)
@@ -85,7 +88,9 @@ final class CustomDockController {
             .environmentObject(settings)
             .environmentObject(runningApps)
             .environmentObject(FaviconLoader.shared)
+            .environmentObject(WindowMonitor.shared)
         panel.hostingView.rootView = AnyView(root)
+        panel.contentScrolls = layout.needsScrolling
 
         shownFrame = NSRect(origin: origin(for: layout.dockSize, on: screen, settings: dockSettings), size: layout.dockSize)
         if !autoHideActive { isHidden = false }
@@ -108,6 +113,9 @@ final class CustomDockController {
 
     private func makePanel() -> CustomDockPanel {
         let panel = CustomDockPanel()
+        panel.onSwitch = { [weak self] offset in
+            self?.store.cycleProfile(kind: .customDock, by: offset)
+        }
         self.panel = panel
         return panel
     }
@@ -283,6 +291,27 @@ final class CustomDockController {
 final class CustomDockPanel: NSPanel {
     let hostingView = NSHostingView(rootView: AnyView(EmptyView()))
 
+    /// Called with +1 or -1 when the user swipes or ⌘-scrolls to switch profiles.
+    var onSwitch: ((Int) -> Void)?
+    /// When the content scrolls, plain swipes scroll it and switching needs ⌘.
+    var contentScrolls = false
+    private var swipeAccumulator: CGFloat = 0
+    private var lastSwitch = Date.distantPast
+
+    override func scrollWheel(with event: NSEvent) {
+        let wantsSwitch = event.modifierFlags.contains(.command) || (!contentScrolls && abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY))
+        guard wantsSwitch else {
+            super.scrollWheel(with: event)
+            return
+        }
+        if event.phase == .began { swipeAccumulator = 0 }
+        swipeAccumulator += event.scrollingDeltaX != 0 ? event.scrollingDeltaX : event.scrollingDeltaY
+        guard abs(swipeAccumulator) > 40, Date().timeIntervalSince(lastSwitch) > 0.5 else { return }
+        lastSwitch = Date()
+        onSwitch?(swipeAccumulator < 0 ? 1 : -1)
+        swipeAccumulator = 0
+    }
+
     init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 80),
@@ -297,6 +326,7 @@ final class CustomDockPanel: NSPanel {
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
         isMovableByWindowBackground = false
+        acceptsMouseMovedEvents = true
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         contentView = hostingView
     }

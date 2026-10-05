@@ -10,6 +10,13 @@ struct DockLayout {
     let maxLength: CGFloat
     /// Widgets that asked to disappear for now (e.g. Now Playing with no player open).
     var hiddenWidgetIDs: Set<UUID> = []
+    /// Minimized-window tiles appended after the items; each is wider than an icon.
+    var minimizedTiles: Int = 0
+
+    var minimizedTileLength: CGFloat { iconSize * 1.6 }
+
+    /// Extra room across the Dock so magnified tiles can grow past the bar.
+    var magnificationHeadroom: CGFloat { settings.magnification ? iconSize * 0.4 : 0 }
 
     func isHidden(_ item: DockItem) -> Bool {
         if case .widget(let widget) = item { return hiddenWidgetIDs.contains(widget.id) }
@@ -49,9 +56,10 @@ struct DockLayout {
     var contentLength: CGFloat {
         var total = padding * 2
         let visible = visibleItems
-        let all = visible.count + extraTiles
+        let all = visible.count + extraTiles + minimizedTiles
         total += visible.reduce(0) { $0 + length(of: $1) }
         total += CGFloat(extraTiles) * iconSize
+        total += CGFloat(minimizedTiles) * minimizedTileLength
         if all > 1 { total += CGFloat(all - 1) * gap }
         return total
     }
@@ -59,11 +67,13 @@ struct DockLayout {
     var needsScrolling: Bool { contentLength > maxLength }
 
     var dockLength: CGFloat { min(contentLength, maxLength) }
+    /// Thickness of the visible bar.
     var dockThickness: CGFloat { tileThickness + padding * 2 }
 
+    /// Size of the window, including magnification headroom beyond the bar.
     var dockSize: CGSize {
         isVertical
-            ? CGSize(width: dockThickness, height: dockLength)
-            : CGSize(width: dockLength, height: dockThickness)
+            ? CGSize(width: dockThickness + magnificationHeadroom, height: dockLength)
+            : CGSize(width: dockLength, height: dockThickness + magnificationHeadroom)
     }
 }

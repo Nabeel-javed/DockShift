@@ -18,6 +18,28 @@ struct SettingsView: View {
     }
 }
 
+private struct AccessibilityStatusRow: View {
+    @ObservedObject private var windows = WindowMonitor.shared
+
+    var body: some View {
+        HStack {
+            if windows.hasAccessibility {
+                Label("Accessibility access granted", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Label("Needs Accessibility access", systemImage: "exclamationmark.circle")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Grant Access…") { windows.requestAccessibility() }
+            }
+        }
+        .font(.caption)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            windows.refreshAccessibility()
+        }
+    }
+}
+
 private struct CustomDockSettingsView: View {
     @EnvironmentObject private var settings: AppSettings
 
@@ -72,6 +94,10 @@ private struct CustomDockSettingsView: View {
                 Toggle("Show Trash", isOn: $settings.customDock.showTrash)
                 Toggle("Click focused app to minimize", isOn: $settings.customDock.clickFocusedAppToMinimize)
                 Toggle("Show app badges", isOn: $settings.customDock.showAppBadges)
+                AccessibilityStatusRow()
+                Text("Minimized windows and badges use Accessibility access. Window previews also need Screen Recording.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

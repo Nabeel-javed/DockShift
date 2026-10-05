@@ -166,6 +166,16 @@ final class ProfileStore: ObservableObject {
         }
     }
 
+    /// Switches to the next (+1) or previous (-1) profile of a kind, wrapping around.
+    func cycleProfile(kind: ProfileKind, by offset: Int) {
+        let group = profiles(of: kind)
+        guard group.count > 1 else { return }
+        let activeID = kind == .customDock ? activeCustomProfileID : activeProfileID
+        let current = group.firstIndex { $0.id == activeID } ?? 0
+        let next = ((current + offset) % group.count + group.count) % group.count
+        apply(group[next].id)
+    }
+
     /// Call before restarting the Dock for reasons other than applying a
     /// profile, so the auto-save watcher ignores the resulting plist churn.
     func noteDockRestart() {

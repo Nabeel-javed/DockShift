@@ -1,32 +1,53 @@
 import AppKit
 import SwiftUI
 
-/// The Custom Dock's content: a translucent bar of tiles.
+/// The Custom Dock's content: a translucent bar of tiles. The window may be
+/// thicker than the bar so magnified tiles can grow past it.
 struct CustomDockView: View {
     @EnvironmentObject private var store: ProfileStore
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var runningApps: RunningAppsMonitor
+    @EnvironmentObject private var windows: WindowMonitor
 
     let layout: DockLayout
     let profile: DockProfile
 
+    private var barSize: CGSize {
+        layout.isVertical
+            ? CGSize(width: layout.dockThickness, height: layout.dockLength)
+            : CGSize(width: layout.dockLength, height: layout.dockThickness)
+    }
+
+    /// Which edge the bar hugs inside the window.
+    private var barAlignment: Alignment {
+        switch layout.settings.position {
+        case .bottom: return .bottom
+        case .left: return .leading
+        case .right: return .trailing
+        }
+    }
+
     var body: some View {
-        Group {
-            if layout.needsScrolling {
-                ScrollView(layout.isVertical ? .vertical : .horizontal, showsIndicators: false) {
+        ZStack(alignment: barAlignment) {
+            background
+                .frame(width: barSize.width, height: barSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous)
+                        .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+                )
+            Group {
+                if layout.needsScrolling {
+                    ScrollView(layout.isVertical ? .vertical : .horizontal, showsIndicators: false) {
+                        tiles
+                    }
+                } else {
                     tiles
                 }
-            } else {
-                tiles
             }
+            .frame(width: barSize.width, height: barSize.height)
         }
-        .frame(width: layout.dockSize.width, height: layout.dockSize.height)
-        .background(background)
-        .clipShape(RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
-        )
+        .frame(width: layout.dockSize.width, height: layout.dockSize.height, alignment: barAlignment)
     }
 
     @ViewBuilder
@@ -53,6 +74,11 @@ struct CustomDockView: View {
                     RunningAppTile(app: app, layout: layout, profile: profile)
                 }
             }
+            if layout.settings.showMinimizedWindows {
+                ForEach(windows.minimized) { window in
+                    MinimizedWindowTile(window: window, layout: layout)
+                }
+            }
             if layout.settings.showTrash {
                 TrashTile(layout: layout)
             }
@@ -76,6 +102,29 @@ struct AxisStack<Content: View>: View {
     }
 }
 
+/// Grows a tile toward the pointer when magnification is on.
+private struct Magnify: ViewModifier {
+    let layout: DockLayout
+    let factor: CGFloat
+    @State private var hovered = false
+
+    private var anchor: UnitPoint {
+        switch layout.settings.position {
+        case .bottom: return .bottom
+        case .left: return .leading
+        case .right: return .trailing
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(hovered && layout.settings.magnification && !layout.needsScrolling ? factor : 1, anchor: anchor)
+            .animation(.spring(response: 0.22, dampingFraction: 0.8), value: hovered)
+            .onHover { hovered = $0 }
+            .zIndex(hovered ? 1 : 0)
+    }
+}
+
 // MARK: - Tiles
 
 private struct DockTile: View {
@@ -85,6 +134,11 @@ private struct DockTile: View {
     let index: Int
     let layout: DockLayout
     let profile: DockProfile
+
+    private var isWidget: Bool {
+        if case .widget = item { return true }
+        return false
+    }
 
     var body: some View {
         Group {
@@ -107,6 +161,7 @@ private struct DockTile: View {
             width: layout.isVertical ? layout.tileThickness : layout.length(of: item),
             height: layout.isVertical ? layout.length(of: item) : layout.tileThickness
         )
+        .modifier(Magnify(layout: layout, factor: isWidget ? 1.08 : 1.3))
     }
 
     private func remove() {
@@ -127,6 +182,7 @@ private struct IconTile<Icon: View>: View {
     let layout: DockLayout
     let label: String?
     let isRunning: Bool
+    var badge: String? = nil
     @ViewBuilder let icon: () -> Icon
 
     var body: some View {
@@ -136,6 +192,17 @@ private struct IconTile<Icon: View>: View {
                     width: label == nil ? layout.iconSize : layout.iconSize * 0.72,
                     height: label == nil ? layout.iconSize : layout.iconSize * 0.72
                 )
+                .overlay(alignment: .topTrailing) {
+                    if let badge {
+                        Text(badge)
+                            .font(.system(size: max(8, layout.iconSize * 0.16), weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: layout.iconSize * 0.3, minHeight: layout.iconSize * 0.3)
+                            .background(Capsule().fill(.red))
+                            .offset(x: layout.iconSize * 0.08, y: -layout.iconSize * 0.06)
+                    }
+                }
             if let label {
                 Text(label)
                     .font(.system(size: max(9, layout.iconSize * 0.16)))
@@ -159,6 +226,7 @@ private struct IconTile<Icon: View>: View {
 private struct AppTile: View {
     @EnvironmentObject private var runningApps: RunningAppsMonitor
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var windows: WindowMonitor
 
     let app: AppReference
     let layout: DockLayout
@@ -166,8 +234,13 @@ private struct AppTile: View {
 
     private var running: NSRunningApplication? { runningApps.app(matching: app) }
 
+    private var badge: String? {
+        guard settings.customDock.showAppBadges else { return nil }
+        return windows.badges[app.label] ?? running?.localizedName.flatMap { windows.badges[$0] }
+    }
+
     var body: some View {
-        IconTile(layout: layout, label: nil, isRunning: running != nil) {
+        IconTile(layout: layout, label: nil, isRunning: running != nil, badge: badge) {
             Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
                 .resizable()
                 .interpolation(.high)
@@ -178,6 +251,7 @@ private struct AppTile: View {
             Button("Open", action: open)
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([app.url]) }
             if let running {
+                Button("Hide") { running.hide() }
                 Button("Quit") { running.terminate() }
             }
             Divider()
@@ -200,19 +274,24 @@ private struct AppTile: View {
 }
 
 private struct RunningAppTile: View {
+    @EnvironmentObject private var store: ProfileStore
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var windows: WindowMonitor
+
     let app: NSRunningApplication
     let layout: DockLayout
     let profile: DockProfile
-    @EnvironmentObject private var store: ProfileStore
 
     var body: some View {
-        IconTile(layout: layout, label: nil, isRunning: true) {
+        IconTile(layout: layout, label: nil, isRunning: true,
+                 badge: settings.customDock.showAppBadges ? app.localizedName.flatMap { windows.badges[$0] } : nil) {
             Image(nsImage: app.icon ?? NSImage())
                 .resizable()
                 .interpolation(.high)
         }
         .frame(width: layout.isVertical ? layout.tileThickness : layout.iconSize,
                height: layout.isVertical ? layout.iconSize : layout.tileThickness)
+        .modifier(Magnify(layout: layout, factor: 1.3))
         .onTapGesture { app.activate(options: [.activateIgnoringOtherApps]) }
         .help(app.localizedName ?? "")
         .contextMenu {
@@ -222,7 +301,57 @@ private struct RunningAppTile: View {
                 }
                 Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             }
+            Button("Hide") { app.hide() }
             Button("Quit") { app.terminate() }
+        }
+    }
+}
+
+/// A minimized window, restored with a click. Shows a cached thumbnail when
+/// Screen Recording allowed one to be taken; otherwise the app icon.
+private struct MinimizedWindowTile: View {
+    @EnvironmentObject private var windows: WindowMonitor
+
+    let window: WindowMonitor.MinimizedWindow
+    let layout: DockLayout
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: layout.iconSize * 0.16, style: .continuous)
+                .fill(.primary.opacity(0.08))
+            if let thumbnail = window.thumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: layout.iconSize * 0.12, style: .continuous))
+                    .padding(layout.iconSize * 0.08)
+            } else {
+                VStack(spacing: 2) {
+                    Image(systemName: "macwindow")
+                        .font(.system(size: layout.iconSize * 0.34))
+                        .foregroundStyle(.secondary)
+                    Text(window.title)
+                        .font(.system(size: max(8, layout.iconSize * 0.14)))
+                        .lineLimit(1)
+                        .padding(.horizontal, 4)
+                }
+            }
+            if let icon = window.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: layout.iconSize * 0.34, height: layout.iconSize * 0.34)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(layout.iconSize * 0.06)
+            }
+        }
+        .frame(width: layout.isVertical ? layout.tileThickness : layout.minimizedTileLength,
+               height: layout.isVertical ? layout.minimizedTileLength : layout.tileThickness)
+        .contentShape(Rectangle())
+        .modifier(Magnify(layout: layout, factor: 1.08))
+        .onTapGesture { windows.restore(window) }
+        .help("\(window.appName): \(window.title)")
+        .contextMenu {
+            Button("Restore") { windows.restore(window) }
         }
     }
 }
@@ -390,6 +519,7 @@ private struct TrashTile: View {
         }
         .frame(width: layout.isVertical ? layout.tileThickness : layout.iconSize,
                height: layout.isVertical ? layout.iconSize : layout.tileThickness)
+        .modifier(Magnify(layout: layout, factor: 1.3))
         .onTapGesture { NSWorkspace.shared.open(trashURL) }
         .help("Trash")
     }
