@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        customDock?.tearDown()
         appleDock.restore(wait: true)
     }
 

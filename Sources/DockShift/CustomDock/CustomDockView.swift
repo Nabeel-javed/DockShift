@@ -1,16 +1,75 @@
 import AppKit
 import SwiftUI
 
-/// The Custom Dock's content: a translucent bar of tiles. The window may be
+/// The Custom Dock window's content: the bar, slid past the screen edge when
+/// hidden, and the small handle that marks where it will appear. All of it
+/// animates on Core Animation; the window itself never moves.
+struct CustomDockRootView: View {
+    @ObservedObject var model: CustomDockModel
+
+    var body: some View {
+        ZStack(alignment: alignment) {
+            if let layout = model.layout, let profile = model.profile {
+                Capsule()
+                    .fill(Color.primary.opacity(0.35))
+                    .frame(width: layout.isVertical ? 5 : 56, height: layout.isVertical ? 56 : 5)
+                    .padding(edge, 4)
+                    .opacity(model.showsHandle ? 1 : 0)
+                CustomDockView(
+                    layout: layout,
+                    profile: profile,
+                    runningApps: model.runningApps,
+                    minimizedWindows: model.minimizedWindows
+                )
+                .padding(edge, CustomDockController.edgeInset)
+                .offset(model.isRevealed ? .zero : hiddenOffset(for: layout))
+                .id(profile.id)
+                .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+        .animation(model.isRevealed ? .spring(response: 0.3, dampingFraction: 0.86) : .easeIn(duration: 0.2),
+                   value: model.isRevealed)
+        .animation(.easeInOut(duration: 0.2), value: model.showsHandle)
+    }
+
+    private var position: DockPosition { model.layout?.settings.position ?? .bottom }
+
+    private var alignment: Alignment {
+        switch position {
+        case .bottom: return .bottom
+        case .left: return .leading
+        case .right: return .trailing
+        }
+    }
+
+    private var edge: Edge.Set {
+        switch position {
+        case .bottom: return .bottom
+        case .left: return .leading
+        case .right: return .trailing
+        }
+    }
+
+    /// Far enough past the edge that the bar and its shadow are fully out of the window.
+    private func hiddenOffset(for layout: DockLayout) -> CGSize {
+        let distance = CustomDockController.edgeInset + layout.dockThickness
+            + layout.magnificationHeadroom + CustomDockController.shadowRoom
+        switch layout.settings.position {
+        case .bottom: return CGSize(width: 0, height: distance)
+        case .left: return CGSize(width: -distance, height: 0)
+        case .right: return CGSize(width: distance, height: 0)
+        }
+    }
+}
+
+/// The Custom Dock's bar: a translucent strip of tiles. Its frame may be
 /// thicker than the bar so magnified tiles can grow past it.
 struct CustomDockView: View {
-    @EnvironmentObject private var store: ProfileStore
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var runningApps: RunningAppsMonitor
-    @EnvironmentObject private var windows: WindowMonitor
-
     let layout: DockLayout
     let profile: DockProfile
+    let runningApps: [NSRunningApplication]
+    let minimizedWindows: [WindowMonitor.MinimizedWindow]
 
     private var barSize: CGSize {
         layout.isVertical
@@ -18,7 +77,7 @@ struct CustomDockView: View {
             : CGSize(width: layout.dockLength, height: layout.dockThickness)
     }
 
-    /// Which edge the bar hugs inside the window.
+    /// Which edge the bar hugs inside its frame.
     private var barAlignment: Alignment {
         switch layout.settings.position {
         case .bottom: return .bottom
@@ -29,6 +88,15 @@ struct CustomDockView: View {
 
     var body: some View {
         ZStack(alignment: barAlignment) {
+            // A soft shadow drawn here rather than by the window, so it slides
+            // with the bar; masked so it doesn't darken the translucent bar.
+            RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous)
+                .fill(Color.black.opacity(0.3))
+                .frame(width: barSize.width, height: barSize.height)
+                .blur(radius: 8)
+                .offset(y: layout.isVertical ? 0 : 2)
+                .mask(OutsideRoundedRect(cornerRadius: layout.cornerRadius).fill(style: FillStyle(eoFill: true)))
+                .allowsHitTesting(false)
             background
                 .frame(width: barSize.width, height: barSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous))
@@ -66,22 +134,38 @@ struct CustomDockView: View {
         }
     }
 
+    /// The profile's items with identities that survive edits, so inserting or
+    /// removing one animates instead of reshuffling the rest.
+    private var identifiedItems: [IdentifiedItem] {
+        var seen: [String: Int] = [:]
+        return profile.items.enumerated().map { index, item in
+            let key = item.identity
+            let occurrence = seen[key, default: 0]
+            seen[key] = occurrence + 1
+            return IdentifiedItem(id: "\(key)#\(occurrence)", index: index, item: item)
+        }
+    }
+
     private var tiles: some View {
         let axis = layout.isVertical ? Axis.vertical : .horizontal
+        let appear = AnyTransition.scale(scale: 0.5).combined(with: .opacity)
         return AxisStack(axis: axis, spacing: layout.gap) {
-            ForEach(Array(profile.items.enumerated()), id: \.offset) { index, item in
-                if !layout.isHidden(item) {
-                    DockTile(item: item, index: index, layout: layout, profile: profile)
+            ForEach(identifiedItems) { entry in
+                if !layout.isHidden(entry.item) {
+                    DockTile(item: entry.item, index: entry.index, layout: layout, profile: profile)
+                        .transition(appear)
                 }
             }
             if layout.settings.showRunningApps {
-                ForEach(runningApps.unpinned(given: profile.items), id: \.processIdentifier) { app in
+                ForEach(runningApps, id: \.processIdentifier) { app in
                     RunningAppTile(app: app, layout: layout, profile: profile)
+                        .transition(appear)
                 }
             }
             if layout.settings.showMinimizedWindows {
-                ForEach(windows.minimized) { window in
+                ForEach(minimizedWindows) { window in
                     MinimizedWindowTile(window: window, layout: layout)
+                        .transition(appear)
                 }
             }
             if layout.settings.showTrash {
@@ -89,6 +173,38 @@ struct CustomDockView: View {
             }
         }
         .padding(layout.padding)
+    }
+}
+
+private struct IdentifiedItem: Identifiable {
+    let id: String
+    let index: Int
+    let item: DockItem
+}
+
+extension DockItem {
+    /// What identifies the item across edits: its path, link or widget id.
+    var identity: String {
+        switch self {
+        case .app(let app): return "app:" + app.path
+        case .folder(let folder): return "folder:" + folder.path
+        case .file(let file): return "file:" + file.path
+        case .link(let link): return "link:" + link.urlString
+        case .widget(let widget): return "widget:" + widget.id.uuidString
+        case .spacer(let size): return "spacer:" + size.rawValue
+        }
+    }
+}
+
+/// Everything around a rounded rectangle (with even-odd fill), used to keep
+/// the Dock's shadow outside the bar.
+private struct OutsideRoundedRect: Shape {
+    let cornerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect.insetBy(dx: -60, dy: -60))
+        path.addRoundedRect(in: rect, cornerSize: CGSize(width: cornerRadius, height: cornerRadius), style: .continuous)
+        return path
     }
 }
 
