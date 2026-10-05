@@ -69,6 +69,23 @@ final class WindowMonitor: ObservableObject {
         hasAccessibility = AXIsProcessTrustedWithOptions(options)
     }
 
+    /// Minimizes the app's focused window, as "Click focused app to minimize"
+    /// promises; without Accessibility access the app is hidden instead.
+    func minimizeFocusedWindow(of app: NSRunningApplication) {
+        guard AXIsProcessTrusted() else {
+            app.hide()
+            return
+        }
+        let element = AXUIElementCreateApplication(app.processIdentifier)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            app.hide()
+            return
+        }
+        AXUIElementSetAttributeValue(value as! AXUIElement, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+    }
+
     func restore(_ window: MinimizedWindow) {
         AXUIElementSetAttributeValue(window.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateIgnoringOtherApps])

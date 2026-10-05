@@ -260,15 +260,11 @@ private struct AppTile: View {
     }
 
     private func open() {
-        if let running {
-            if settings.customDock.clickFocusedAppToMinimize,
-               running.bundleIdentifier == runningApps.frontmostBundleID {
-                running.hide()
-            } else {
-                running.activate(options: [.activateIgnoringOtherApps])
-            }
+        if let running, settings.customDock.clickFocusedAppToMinimize,
+           running.bundleIdentifier == runningApps.frontmostBundleID {
+            WindowMonitor.shared.minimizeFocusedWindow(of: running)
         } else {
-            NSWorkspace.shared.openApplication(at: app.url, configuration: NSWorkspace.OpenConfiguration())
+            AppLauncher.open(app.url, running: running)
         }
     }
 }
@@ -292,7 +288,7 @@ private struct RunningAppTile: View {
         .frame(width: layout.isVertical ? layout.tileThickness : layout.iconSize,
                height: layout.isVertical ? layout.iconSize : layout.tileThickness)
         .modifier(Magnify(layout: layout, factor: 1.3))
-        .onTapGesture { app.activate(options: [.activateIgnoringOtherApps]) }
+        .onTapGesture { AppLauncher.open(app.bundleURL, running: app) }
         .help(app.localizedName ?? "")
         .contextMenu {
             if let url = app.bundleURL {
