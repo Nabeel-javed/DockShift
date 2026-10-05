@@ -82,7 +82,10 @@ private struct NewProfileMenu: View {
                 }
             }
             Section("Custom Dock") {
-                Button("New Custom Dock") {
+                Button("Create from Current Dock") {
+                    onCreated(store.createFromCurrentDock(name: "Custom Dock", kind: .customDock))
+                }
+                Button("Start Empty") {
                     onCreated(store.createEmpty(name: "Custom Dock", kind: .customDock))
                 }
             }
@@ -177,7 +180,9 @@ private struct ProfileDetailView: View {
                 reloadFromStore()
             }
         } message: {
-            Text("The saved items in “\(saved.name)” will be replaced with the apps and spacers pinned to your Dock right now.")
+            Text(isCustom
+                 ? "The apps and spacers in “\(saved.name)” will be replaced with the ones pinned to your macOS Dock right now. Widgets, folders, files and links are kept."
+                 : "The saved items in “\(saved.name)” will be replaced with the apps and spacers pinned to your Dock right now.")
         }
         .sheet(isPresented: $showWidgetLibrary) {
             WidgetLibraryView { instance in
@@ -239,9 +244,7 @@ private struct ProfileDetailView: View {
             }
 
             Menu("Profile actions") {
-                if !isCustom {
-                    Button("Replace with Current Dock…") { confirmReplace = true }
-                }
+                Button("Replace with Current Dock…") { confirmReplace = true }
                 Button("Duplicate") { store.duplicate(profile.id) }
                 Divider()
                 Button("Delete…", role: .destructive) { confirmDelete = true }

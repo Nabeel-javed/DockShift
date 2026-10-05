@@ -72,7 +72,7 @@ struct WalkthroughView: View {
                 .font(.title.weight(.semibold))
             Text(settings.dockSetup == .macOSOnly
                  ? "Keep the apps already in your Dock, or start with an empty layout."
-                 : "Your current macOS Dock is saved as a profile, and a Custom Dock with a few widgets is created for you.")
+                 : "Your current macOS Dock is saved as a profile, and a Custom Dock with the same apps plus a few widgets is created for you.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             HStack(spacing: 12) {
@@ -96,13 +96,12 @@ struct WalkthroughView: View {
 
     private func finish(_ first: DockProfile) {
         if settings.dockSetup.showsCustomDock, store.profiles(of: .customDock).isEmpty {
-            var custom = store.createEmpty(name: "Custom Dock", kind: .customDock)
-            custom.color = .teal
-            custom.items = [
+            var custom = store.createFromCurrentDock(name: "Custom Dock", kind: .customDock, extraItems: [
+                .spacer(.regular),
                 .widget(WidgetInstance(type: .clock)),
                 .widget(WidgetInstance(type: .calendar, variant: "nextEvent")),
-                .widget(WidgetInstance(type: .focusTimer)),
-            ]
+            ])
+            custom.color = .teal
             store.update(custom)
         }
         step = 2

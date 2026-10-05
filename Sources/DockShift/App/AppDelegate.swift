@@ -24,7 +24,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         settings.$dockSetup
             .removeDuplicates()
-            .sink { [weak self] setup in self?.applyAppleDockVisibility(for: setup) }
+            .sink { [weak self] setup in
+                guard let self else { return }
+                // A Custom Dock with nothing in it is no replacement; start from the real Dock.
+                if setup.showsCustomDock, self.store.profiles(of: .customDock).isEmpty {
+                    self.store.createFromCurrentDock(name: "Custom Dock", kind: .customDock)
+                }
+                self.applyAppleDockVisibility(for: setup)
+            }
             .store(in: &cancellables)
 
         HotKeyManager.shared.onTrigger = { [weak self] id in

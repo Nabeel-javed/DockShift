@@ -65,13 +65,19 @@ final class ProfileStore: ObservableObject {
 
     // MARK: - Creating and editing
 
-    /// Snapshots the Dock as it is right now. The Dock already matches, so the
-    /// new profile becomes the active one without a restart.
+    /// Snapshots the Dock as it is right now. A macOS Dock profile made this
+    /// way already matches the Dock, so it becomes active without a restart;
+    /// a Custom Dock profile starts with the same apps and can take widgets.
     @discardableResult
-    func createFromCurrentDock(name: String) -> DockProfile {
-        let profile = DockProfile(name: uniqueName(name), items: DockBridge.currentItems())
+    func createFromCurrentDock(name: String, kind: ProfileKind = .macOSDock, extraItems: [DockItem] = []) -> DockProfile {
+        let profile = DockProfile(name: uniqueName(name), kind: kind, items: DockBridge.currentItems() + extraItems)
         profiles.append(profile)
-        activeProfileID = profile.id
+        switch kind {
+        case .macOSDock:
+            activeProfileID = profile.id
+        case .customDock:
+            if activeCustomProfileID == nil { activeCustomProfileID = profile.id }
+        }
         save()
         return profile
     }
@@ -124,10 +130,12 @@ final class ProfileStore: ObservableObject {
         update(target)
     }
 
-    /// Overwrites a profile's items with whatever is pinned right now.
+    /// Overwrites a profile's apps and spacers with whatever is pinned right
+    /// now. Custom Dock profiles keep their folders, files, links and widgets.
     func replaceWithCurrentDock(_ id: UUID) {
         guard var target = profile(id: id) else { return }
-        target.items = DockBridge.currentItems()
+        let kept = target.kind == .customDock ? target.items.filter { !$0.isSupportedInMacOSDock } : []
+        target.items = DockBridge.currentItems() + kept
         update(target)
     }
 
