@@ -117,6 +117,13 @@ final class ProfileStore: ObservableObject {
         return copy
     }
 
+    /// Edits a profile's items in place, e.g. from the Custom Dock's context menus.
+    func updateItems(of id: UUID, _ transform: (inout [DockItem]) -> Void) {
+        guard var target = profile(id: id) else { return }
+        transform(&target.items)
+        update(target)
+    }
+
     /// Overwrites a profile's items with whatever is pinned right now.
     func replaceWithCurrentDock(_ id: UUID) {
         guard var target = profile(id: id) else { return }
@@ -157,6 +164,12 @@ final class ProfileStore: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    /// Call before restarting the Dock for reasons other than applying a
+    /// profile, so the auto-save watcher ignores the resulting plist churn.
+    func noteDockRestart() {
+        lastAppliedAt = Date()
     }
 
     /// Pulls changes made directly in Apple's Dock into the active profile.

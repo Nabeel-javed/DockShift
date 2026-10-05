@@ -46,6 +46,20 @@ enum DockBridge {
         restartDock()
     }
 
+    /// Whether Apple's Dock is set to auto-hide.
+    static var isAutoHidden: Bool {
+        CFPreferencesAppSynchronize(domain)
+        return CFPreferencesCopyAppValue("autohide" as CFString, domain) as? Bool ?? false
+    }
+
+    /// Changes Apple's Dock auto-hide setting and restarts the Dock.
+    static func setAutoHidden(_ hidden: Bool) {
+        guard isAutoHidden != hidden else { return }
+        CFPreferencesSetAppValue("autohide" as CFString, hidden as CFBoolean, domain)
+        CFPreferencesAppSynchronize(domain)
+        restartDock()
+    }
+
     static func restartDock() {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/killall")

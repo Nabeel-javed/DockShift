@@ -7,12 +7,74 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+            CustomDockSettingsView()
+                .tabItem { Label("Custom Dock", systemImage: "dock.rectangle") }
             ShortcutsSettingsView()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 520, height: 420)
+        .frame(width: 520, height: 520)
+    }
+}
+
+private struct CustomDockSettingsView: View {
+    @EnvironmentObject private var settings: AppSettings
+
+    var body: some View {
+        Form {
+            Section("Dock setup") {
+                Picker("Setup", selection: $settings.dockSetup) {
+                    ForEach(DockSetup.allCases) { setup in
+                        Text(setup.title).tag(setup)
+                    }
+                }
+                .labelsHidden()
+                Text(settings.dockSetup.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Position & appearance") {
+                Picker("Position", selection: $settings.customDock.position) {
+                    ForEach(DockPosition.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Picker("Appearance", selection: $settings.customDock.appearance) {
+                    ForEach(DockAppearance.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Picker("Material", selection: $settings.customDock.material) {
+                    ForEach(DockMaterial.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Slider(value: $settings.customDock.size, in: 0...1) {
+                    Text("Size")
+                } minimumValueLabel: {
+                    Image(systemName: "square").font(.caption2)
+                } maximumValueLabel: {
+                    Image(systemName: "square").font(.title3)
+                }
+                Toggle("Magnification", isOn: $settings.customDock.magnification)
+            }
+
+            Section("Visibility") {
+                Toggle("Automatically hide", isOn: $settings.customDock.autoHide)
+                Toggle("Show handle when hidden", isOn: $settings.customDock.showHandleWhenHidden)
+                    .disabled(!settings.customDock.autoHide)
+                Toggle("Use as desktop widget", isOn: $settings.customDock.desktopWidgetMode)
+                Toggle("Hide when macOS Dock appears", isOn: $settings.customDock.hideWhenMacOSDockAppears)
+            }
+
+            Section("Content") {
+                Toggle("Show running apps", isOn: $settings.customDock.showRunningApps)
+                Toggle("Show minimized windows", isOn: $settings.customDock.showMinimizedWindows)
+                Toggle("Show Trash", isOn: $settings.customDock.showTrash)
+                Toggle("Click focused app to minimize", isOn: $settings.customDock.clickFocusedAppToMinimize)
+                Toggle("Show app badges", isOn: $settings.customDock.showAppBadges)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 

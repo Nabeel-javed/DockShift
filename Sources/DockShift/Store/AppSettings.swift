@@ -21,6 +21,18 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(smoothSwitching, forKey: Keys.smoothSwitching) }
     }
 
+    @Published var dockSetup: DockSetup {
+        didSet { defaults.set(dockSetup.rawValue, forKey: Keys.dockSetup) }
+    }
+
+    @Published var customDock: CustomDockSettings {
+        didSet {
+            if let data = try? JSONEncoder().encode(customDock) {
+                defaults.set(data, forKey: Keys.customDock)
+            }
+        }
+    }
+
     @Published var loginItemError: String?
 
     private let defaults = UserDefaults.standard
@@ -30,12 +42,21 @@ final class AppSettings: ObservableObject {
         static let showProfileName = "showProfileNameInMenuBar"
         static let autoSave = "autoSaveDockChanges"
         static let smoothSwitching = "smoothSwitching"
+        static let dockSetup = "dockSetup"
+        static let customDock = "customDockSettings"
     }
 
     init() {
         showProfileNameInMenuBar = defaults.object(forKey: Keys.showProfileName) as? Bool ?? true
         autoSaveDockChanges = defaults.bool(forKey: Keys.autoSave)
         smoothSwitching = defaults.object(forKey: Keys.smoothSwitching) as? Bool ?? true
+        dockSetup = DockSetup(rawValue: defaults.string(forKey: Keys.dockSetup) ?? "") ?? .macOSOnly
+        if let data = defaults.data(forKey: Keys.customDock),
+           let decoded = try? JSONDecoder().decode(CustomDockSettings.self, from: data) {
+            customDock = decoded
+        } else {
+            customDock = CustomDockSettings()
+        }
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
