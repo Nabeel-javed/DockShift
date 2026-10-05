@@ -10,7 +10,7 @@ struct EditorView: View {
     var body: some View {
         Group {
             if store.profiles.isEmpty {
-                FirstRunView { created in selection = created.id }
+                WalkthroughView { created in selection = created?.id }
             } else {
                 NavigationSplitView {
                     sidebar
@@ -114,43 +114,6 @@ private struct ProfileRow: View {
             }
         }
         .padding(.vertical, 2)
-    }
-}
-
-// MARK: - First run
-
-private struct FirstRunView: View {
-    @EnvironmentObject private var store: ProfileStore
-    let onCreated: (DockProfile) -> Void
-
-    var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "dock.rectangle")
-                .font(.system(size: 52, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("Save your first Dock")
-                .font(.title2.bold())
-            Text("Keep the apps already in your Dock, or start with an empty layout.\nYou can switch between saved Docks from the menu bar.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 12) {
-                Button("Start Empty") {
-                    onCreated(store.createEmpty(name: "New Dock"))
-                }
-                Button("Create from Current Dock") {
-                    onCreated(store.createFromCurrentDock(name: "Everyday"))
-                }
-                .buttonStyle(.borderedProminent)
-            }
-            .padding(.top, 6)
-            Button("Or create a Custom Dock with widgets") {
-                onCreated(store.createEmpty(name: "Custom Dock", kind: .customDock))
-            }
-            .buttonStyle(.link)
-            .padding(.top, 4)
-        }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
