@@ -36,6 +36,11 @@ struct CustomDockView: View {
                     RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous)
                         .strokeBorder(.white.opacity(0.12), lineWidth: 1)
                 )
+            // Right-clicking empty space (gaps, spacers) opens the DockShift menu.
+            RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(0.001))
+                .frame(width: barSize.width, height: barSize.height)
+                .contextMenu { DockShiftMenuItems() }
             Group {
                 if layout.needsScrolling {
                     ScrollView(layout.isVertical ? .vertical : .horizontal, showsIndicators: false) {
@@ -84,6 +89,30 @@ struct CustomDockView: View {
             }
         }
         .padding(layout.padding)
+    }
+}
+
+/// The DockShift menu, offered when right-clicking an empty part of the
+/// Custom Dock, so it is reachable even when the menu bar item is hidden.
+struct DockShiftMenuItems: View {
+    @EnvironmentObject private var store: ProfileStore
+    @EnvironmentObject private var settings: AppSettings
+
+    var body: some View {
+        let customDocks = store.profiles(of: .customDock)
+        if customDocks.count > 1 {
+            Menu("Switch Dock") {
+                ForEach(customDocks) { profile in
+                    Button(profile.name) { store.apply(profile.id) }
+                }
+            }
+        }
+        Button("Manage Docks…") { WindowManager.shared.showEditor(store: store, settings: settings) }
+        Button("Dock Settings…") { WindowManager.shared.showSettings(store: store, settings: settings) }
+        Divider()
+        Button("Use Original Dock") { settings.dockSetup = .macOSOnly }
+        Divider()
+        Button("Quit DockShift") { NSApp.terminate(nil) }
     }
 }
 

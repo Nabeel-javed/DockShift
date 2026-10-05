@@ -47,7 +47,8 @@ final class AppSettings: ObservableObject {
     }
 
     init() {
-        showProfileNameInMenuBar = defaults.object(forKey: Keys.showProfileName) as? Bool ?? true
+        // Off by default: a wider item is the first one macOS hides beside the notch.
+        showProfileNameInMenuBar = defaults.object(forKey: Keys.showProfileName) as? Bool ?? false
         autoSaveDockChanges = defaults.bool(forKey: Keys.autoSave)
         smoothSwitching = defaults.object(forKey: Keys.smoothSwitching) as? Bool ?? true
         dockSetup = DockSetup(rawValue: defaults.string(forKey: Keys.dockSetup) ?? "") ?? .macOSOnly

@@ -12,7 +12,10 @@ final class StatusItemController: NSObject {
     init(store: ProfileStore, settings: AppSettings) {
         self.store = store
         self.settings = settings
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        StatusItemController.placeAwayFromNotchOnce()
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.autosaveName = StatusItemController.autosaveName
+        statusItem = item
         super.init()
 
         if let button = statusItem.button {
@@ -29,8 +32,34 @@ final class StatusItemController: NSObject {
         refresh()
     }
 
+    private static let autosaveName = "DockShift"
+
+    /// macOS puts a new menu bar item right next to the notch, where it is the
+    /// first to be hidden whenever the active app's menus need the room. The
+    /// first time, place DockShift's item just left of the system items
+    /// instead; ⌘-dragging it still moves it anywhere.
+    private static func placeAwayFromNotchOnce() {
+        let key = "NSStatusItem Preferred Position \(autosaveName)"
+        guard UserDefaults.standard.object(forKey: key) == nil, let screen = NSScreen.screens.first else { return }
+        let systemOwners: Set<String> = ["Control Center", "SystemUIServer", "Spotlight"]
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        let systemItemXs = windows.compactMap { window -> Double? in
+            guard (window[kCGWindowLayer as String] as? Int) == Int(CGWindowLevelForKey(.statusWindow)),
+                  let owner = window[kCGWindowOwnerName as String] as? String, systemOwners.contains(owner),
+                  let bounds = window[kCGWindowBounds as String] as? [String: Any],
+                  let x = bounds["X"] as? Double, let y = bounds["Y"] as? Double,
+                  y < 5, x >= screen.frame.minX, x < screen.frame.maxX
+            else { return nil }
+            return x
+        }
+        guard let leftmost = systemItemXs.min() else { return }
+        // Preferred positions count from the right edge of the screen.
+        UserDefaults.standard.set(screen.frame.maxX - leftmost + 8, forKey: key)
+    }
+
     private func refresh() {
-        if settings.showProfileNameInMenuBar, let active = store.activeProfile {
+        let active = settings.dockSetup.usesCustomDock ? store.activeCustomProfile : store.activeProfile
+        if settings.showProfileNameInMenuBar, let active {
             statusItem.button?.title = " " + active.name
         } else {
             statusItem.button?.title = ""

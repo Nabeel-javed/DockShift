@@ -75,6 +75,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// Opening DockShift again while it runs (Spotlight, Finder, Launchpad)
+    /// shows Manage Docks, so it stays reachable even when the menu bar is full.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        WindowManager.shared.showEditor(store: store, settings: settings)
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         appleDock.restore()
     }
