@@ -20,7 +20,10 @@ final class StatusItemController: NSObject {
             button.imagePosition = .imageLeading
         }
 
-        Publishers.CombineLatest3(store.$profiles, store.$activeProfileID, settings.$showProfileNameInMenuBar)
+        Publishers.CombineLatest4(store.$profiles, store.$activeProfileID, settings.$showProfileNameInMenuBar, settings.$dockSetup)
+            .sink { [weak self] _ in self?.refresh() }
+            .store(in: &cancellables)
+        store.$activeCustomProfileID
             .sink { [weak self] _ in self?.refresh() }
             .store(in: &cancellables)
         refresh()
@@ -69,6 +72,19 @@ final class StatusItemController: NSObject {
         }
 
         menu.addItem(.separator())
+        let setupHeader = NSMenuItem(title: "Dock", action: nil, keyEquivalent: "")
+        setupHeader.isEnabled = false
+        menu.addItem(setupHeader)
+        for setup in DockSetup.allCases {
+            let item = NSMenuItem(title: setup.menuTitle, action: #selector(selectSetup(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = setup.rawValue
+            item.state = settings.dockSetup == setup ? .on : .off
+            item.indentationLevel = 1
+            menu.addItem(item)
+        }
+
+        menu.addItem(.separator())
         menu.addItem(command("Manage Docks…", #selector(openEditor), key: "m"))
         menu.addItem(command("Save Current Dock as New Profile…", #selector(saveCurrentDock), key: "s"))
         menu.addItem(.separator())
@@ -102,6 +118,11 @@ final class StatusItemController: NSObject {
     @objc private func selectProfile(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? UUID else { return }
         store.apply(id)
+    }
+
+    @objc private func selectSetup(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let setup = DockSetup(rawValue: raw) else { return }
+        settings.dockSetup = setup
     }
 
     @objc private func openEditor() {

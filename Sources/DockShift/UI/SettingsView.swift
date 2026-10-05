@@ -45,18 +45,6 @@ private struct CustomDockSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Dock setup") {
-                Picker("Setup", selection: $settings.dockSetup) {
-                    ForEach(DockSetup.allCases) { setup in
-                        Text(setup.title).tag(setup)
-                    }
-                }
-                .labelsHidden()
-                Text(settings.dockSetup.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             Section("Position & appearance") {
                 Picker("Position", selection: $settings.customDock.position) {
                     ForEach(DockPosition.allCases) { Text($0.title).tag($0) }
@@ -120,6 +108,19 @@ private struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
+            Section("Dock setup") {
+                Picker("Setup", selection: $settings.dockSetup) {
+                    ForEach(DockSetup.allCases) { setup in
+                        Text(setup.title).tag(setup)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                Text(settings.dockSetup.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 Toggle("Launch at login", isOn: $settings.launchAtLogin)
                 if let error = settings.loginItemError {

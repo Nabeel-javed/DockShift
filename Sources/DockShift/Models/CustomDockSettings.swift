@@ -24,6 +24,15 @@ enum DockSetup: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// Short form for the menu bar.
+    var menuTitle: String {
+        switch self {
+        case .macOSOnly: return "Use macOS Dock"
+        case .both: return "Use both Docks"
+        case .customMain: return "Use Custom Dock"
+        }
+    }
+
     var showsCustomDock: Bool { self != .macOSOnly }
 }
 
