@@ -3,14 +3,22 @@ import Combine
 import SwiftUI
 
 /// Owns the Custom Dock panel: shows it when the Dock setup calls for it,
-/// sizes it from the active profile, and keeps it pinned to its screen edge.
+/// sizes it from the active profile, keeps it pinned to its screen edge, and
+/// slides it away when auto-hide is on.
 @MainActor
 final class CustomDockController {
     private let store: ProfileStore
     private let settings: AppSettings
     private let runningApps = RunningAppsMonitor()
     private var panel: CustomDockPanel?
+    private var handle: HandleWindow?
     private var cancellables = Set<AnyCancellable>()
+
+    /// Frame of the Dock when fully shown; the hidden frame is derived from it.
+    private var shownFrame: NSRect = .zero
+    private var isHidden = false
+    private var pointerTimer: Timer?
+    private var pendingHide: DispatchWorkItem?
 
     init(store: ProfileStore, settings: AppSettings) {
         self.store = store
@@ -29,6 +37,10 @@ final class CustomDockController {
             .sink { [weak self] _ in self?.refresh() }
             .store(in: &cancellables)
 
+        pointerTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkPointer() }
+        }
+
         refresh()
     }
 
@@ -38,9 +50,16 @@ final class CustomDockController {
 
     private var screen: NSScreen? { NSScreen.screens.first }
 
+    private var autoHideActive: Bool {
+        settings.customDock.autoHide && !settings.customDock.desktopWidgetMode
+    }
+
+    // MARK: - Building the Dock
+
     func refresh() {
         guard shouldShow, let profile = store.activeCustomProfile, let screen else {
             panel?.orderOut(nil)
+            handle?.orderOut(nil)
             return
         }
 
@@ -66,9 +85,11 @@ final class CustomDockController {
             .environmentObject(FaviconLoader.shared)
         panel.hostingView.rootView = AnyView(root)
 
-        let frame = NSRect(origin: origin(for: layout.dockSize, on: screen, settings: dockSettings), size: layout.dockSize)
-        panel.setFrame(frame, display: true)
+        shownFrame = NSRect(origin: origin(for: layout.dockSize, on: screen, settings: dockSettings), size: layout.dockSize)
+        if !autoHideActive { isHidden = false }
+        panel.setFrame(isHidden ? hiddenFrame(on: screen) : shownFrame, display: true)
         panel.orderFrontRegardless()
+        updateHandle(on: screen)
     }
 
     private func makePanel() -> CustomDockPanel {
@@ -92,6 +113,11 @@ final class CustomDockController {
             : screen.frame.width - margin * 2
     }
 
+    /// Whether Apple's Dock occupies the same edge as the Custom Dock.
+    private var appleDockOnSameEdge: Bool {
+        DockLayoutInfo.orientation == settings.customDock.position.rawValue
+    }
+
     /// Bottom-left corner of the Dock, keeping clear of Apple's Dock when both
     /// sit on the same edge.
     private func origin(for size: CGSize, on screen: NSScreen, settings dockSettings: CustomDockSettings) -> CGPoint {
@@ -100,14 +126,141 @@ final class CustomDockController {
         let visible = screen.visibleFrame
         switch dockSettings.position {
         case .bottom:
-            let appleDockHeight = DockLayoutInfo.orientation == "bottom" ? visible.minY - frame.minY : 0
+            let appleDockHeight = appleDockOnSameEdge ? visible.minY - frame.minY : 0
             return CGPoint(x: frame.midX - size.width / 2, y: frame.minY + appleDockHeight + edgeInset)
         case .left:
-            let appleDockWidth = DockLayoutInfo.orientation == "left" ? visible.minX - frame.minX : 0
+            let appleDockWidth = appleDockOnSameEdge ? visible.minX - frame.minX : 0
             return CGPoint(x: frame.minX + appleDockWidth + edgeInset, y: visible.midY - size.height / 2)
         case .right:
-            let appleDockWidth = DockLayoutInfo.orientation == "right" ? frame.maxX - visible.maxX : 0
+            let appleDockWidth = appleDockOnSameEdge ? frame.maxX - visible.maxX : 0
             return CGPoint(x: frame.maxX - appleDockWidth - edgeInset - size.width, y: visible.midY - size.height / 2)
+        }
+    }
+
+    /// The Dock's frame when slid off screen (a little extra so its shadow goes too).
+    private func hiddenFrame(on screen: NSScreen) -> NSRect {
+        var frame = shownFrame
+        let overshoot: CGFloat = 12
+        switch settings.customDock.position {
+        case .bottom: frame.origin.y = screen.frame.minY - frame.height - overshoot
+        case .left: frame.origin.x = screen.frame.minX - frame.width - overshoot
+        case .right: frame.origin.x = screen.frame.maxX + overshoot
+        }
+        return frame
+    }
+
+    // MARK: - Auto-hide
+
+    private func checkPointer() {
+        guard shouldShow, let screen, panel != nil else { return }
+        guard autoHideActive else {
+            if isHidden { reveal(on: screen) }
+            return
+        }
+
+        let mouse = NSEvent.mouseLocation
+        let dockSettings = settings.customDock
+
+        // Make room for Apple's auto-hidden Dock when it is about to appear on our edge.
+        if dockSettings.hideWhenMacOSDockAppears, appleDockOnSameEdge, DockBridge.isAutoHidden,
+           isAtVeryEdge(mouse, on: screen) {
+            scheduleHide(after: 0)
+            return
+        }
+
+        if revealZone(on: screen).contains(mouse) {
+            pendingHide?.cancel()
+            pendingHide = nil
+            if isHidden { reveal(on: screen) }
+        } else if !isHidden {
+            scheduleHide(after: 0.6)
+        }
+    }
+
+    /// The shown Dock plus a thin strip along the screen edge in front of it.
+    private func revealZone(on screen: NSScreen) -> NSRect {
+        let around = shownFrame.insetBy(dx: -14, dy: -14)
+        let frame = screen.frame
+        let strip: NSRect
+        switch settings.customDock.position {
+        case .bottom:
+            strip = NSRect(x: shownFrame.minX - 40, y: frame.minY, width: shownFrame.width + 80, height: 3)
+        case .left:
+            strip = NSRect(x: frame.minX, y: shownFrame.minY - 40, width: 3, height: shownFrame.height + 80)
+        case .right:
+            strip = NSRect(x: frame.maxX - 3, y: shownFrame.minY - 40, width: 3, height: shownFrame.height + 80)
+        }
+        return around.union(strip)
+    }
+
+    private func isAtVeryEdge(_ point: NSPoint, on screen: NSScreen) -> Bool {
+        let frame = screen.frame
+        guard frame.insetBy(dx: -1, dy: -1).contains(point) else { return false }
+        switch settings.customDock.position {
+        case .bottom: return point.y <= frame.minY + 1
+        case .left: return point.x <= frame.minX + 1
+        case .right: return point.x >= frame.maxX - 1
+        }
+    }
+
+    private func scheduleHide(after delay: TimeInterval) {
+        guard pendingHide == nil, let screen else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingHide = nil
+            self.hide(on: screen)
+        }
+        pendingHide = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func reveal(on screen: NSScreen) {
+        isHidden = false
+        animate(panel, to: shownFrame)
+        updateHandle(on: screen)
+    }
+
+    private func hide(on screen: NSScreen) {
+        guard autoHideActive, !isHidden else { return }
+        isHidden = true
+        animate(panel, to: hiddenFrame(on: screen))
+        updateHandle(on: screen)
+    }
+
+    private func animate(_ panel: NSPanel?, to frame: NSRect) {
+        guard let panel else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frame, display: true)
+        }
+    }
+
+    private func updateHandle(on screen: NSScreen) {
+        let wantHandle = isHidden && autoHideActive && settings.customDock.showHandleWhenHidden
+        guard wantHandle else {
+            handle?.orderOut(nil)
+            return
+        }
+        let handle = self.handle ?? HandleWindow()
+        self.handle = handle
+        handle.appearance = panel?.appearance
+        handle.setFrame(handleFrame(on: screen), display: true)
+        handle.orderFrontRegardless()
+    }
+
+    private func handleFrame(on screen: NSScreen) -> NSRect {
+        let frame = screen.frame
+        let length: CGFloat = 56
+        let thickness: CGFloat = 6
+        let inset: CGFloat = 4
+        switch settings.customDock.position {
+        case .bottom:
+            return NSRect(x: shownFrame.midX - length / 2, y: frame.minY + inset, width: length, height: thickness)
+        case .left:
+            return NSRect(x: frame.minX + inset, y: shownFrame.midY - length / 2, width: thickness, height: length)
+        case .right:
+            return NSRect(x: frame.maxX - inset - thickness, y: shownFrame.midY - length / 2, width: thickness, height: length)
         }
     }
 }
@@ -136,4 +289,26 @@ final class CustomDockPanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+/// The small pill shown at the screen edge while the Dock is hidden.
+final class HandleWindow: NSPanel {
+    init() {
+        super.init(
+            contentRect: NSRect(x: 0, y: 0, width: 56, height: 6),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        ignoresMouseEvents = true
+        hidesOnDeactivate = false
+        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)))
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        contentView = NSHostingView(rootView:
+            Capsule().fill(.primary.opacity(0.35))
+        )
+    }
 }
