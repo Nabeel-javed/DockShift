@@ -61,6 +61,9 @@ struct WidgetView: View {
         case .network: NetworkTile(context: context)
         case .shortcut: ShortcutTile(context: context)
         case .airDrop: AirDropTile(context: context)
+        case .weather: WeatherTile(context: context)
+        case .stock: StockTile(context: context)
+        case .watchlist: WatchlistTile(context: context)
         default: PlaceholderTile(context: context)
         }
     }
@@ -70,7 +73,8 @@ struct WidgetView: View {
 func widgetHasConfiguration(_ type: WidgetType) -> Bool {
     switch type {
     case .worldClock, .focusTimer, .timeProgress, .countdown, .alarm,
-         .reminders, .hydration, .calendar, .stickyNote, .nowPlaying, .shortcut:
+         .reminders, .hydration, .calendar, .stickyNote, .nowPlaying, .shortcut,
+         .weather, .stock, .watchlist:
         return true
     default:
         return false
@@ -80,7 +84,7 @@ func widgetHasConfiguration(_ type: WidgetType) -> Bool {
 /// Families that paint their own background instead of the standard tile fill.
 func widgetDrawsOwnBackground(_ type: WidgetType) -> Bool {
     switch type {
-    case .stickyNote, .hydration: return true
+    case .stickyNote, .hydration, .weather: return true
     default: return false
     }
 }
@@ -103,6 +107,8 @@ struct WidgetConfigView: View {
             case .stickyNote: StickyNoteConfig(context: context)
             case .nowPlaying: NowPlayingConfig(context: context)
             case .shortcut: ShortcutConfig(context: context)
+            case .weather: WeatherConfig(context: context)
+            case .stock, .watchlist: StockConfig(context: context)
             default: Text("Nothing to configure.").padding()
             }
         }
