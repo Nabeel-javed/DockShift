@@ -42,7 +42,9 @@ final class StatusItemController: NSObject {
         let key = "NSStatusItem Preferred Position \(autosaveName)"
         guard UserDefaults.standard.object(forKey: key) == nil, let screen = NSScreen.screens.first else { return }
         let systemOwners: Set<String> = ["Control Center", "SystemUIServer", "Spotlight"]
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        // Not .optionOnScreenOnly: without Screen Recording access macOS reports
+        // other apps' menu bar items as off screen.
+        let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
         let systemItemXs = windows.compactMap { window -> Double? in
             guard (window[kCGWindowLayer as String] as? Int) == Int(CGWindowLevelForKey(.statusWindow)),
                   let owner = window[kCGWindowOwnerName as String] as? String, systemOwners.contains(owner),
