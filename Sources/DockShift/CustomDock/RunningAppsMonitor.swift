@@ -6,6 +6,8 @@ import Combine
 final class RunningAppsMonitor: ObservableObject {
     @Published private(set) var running: [NSRunningApplication] = []
     @Published private(set) var frontmostBundleID: String?
+    /// Paths of apps opened from the Dock that haven't finished launching yet.
+    @Published private(set) var launching: Set<String> = []
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -20,6 +22,22 @@ final class RunningAppsMonitor: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
             .store(in: &cancellables)
+        NSWorkspace.shared.notificationCenter
+            .publisher(for: NSWorkspace.didLaunchApplicationNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] note in
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                if let path = app?.bundleURL?.path { self?.launching.remove(path) }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Bounces the app's tile until it finishes launching (or 20 seconds pass).
+    func markLaunching(_ path: String) {
+        launching.insert(path)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            self?.launching.remove(path)
+        }
     }
 
     private func refresh() {

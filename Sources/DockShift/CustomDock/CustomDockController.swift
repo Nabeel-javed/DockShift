@@ -30,6 +30,7 @@ final class CustomDockController {
     private let settings: AppSettings
     private let runningApps = RunningAppsMonitor()
     private let model = CustomDockModel()
+    private let drag = DockDragState()
     private var panel: CustomDockPanel?
     private var cancellables = Set<AnyCancellable>()
     private var eventMonitors: [Any] = []
@@ -70,6 +71,12 @@ final class CustomDockController {
             }
             .store(in: &cancellables)
 
+        drag.removeItem = { [weak self] index in
+            guard let self, let id = self.store.activeCustomProfileID else { return }
+            self.store.updateItems(of: id) { items in
+                if items.indices.contains(index) { items.remove(at: index) }
+            }
+        }
         startPointerTracking()
         refresh()
     }
@@ -126,6 +133,7 @@ final class CustomDockController {
         let frame = windowFrame(for: layout, on: screen)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         barRect = barFrame(for: layout, in: frame)
+        drag.barRect = barRect
 
         let isFirstLayout = model.layout == nil
         let switchedProfile = !isFirstLayout && model.profile?.id != profile.id
@@ -178,6 +186,7 @@ final class CustomDockController {
             .environmentObject(runningApps)
             .environmentObject(FaviconLoader.shared)
             .environmentObject(WindowMonitor.shared)
+            .environmentObject(drag)
         panel.hostingView.rootView = AnyView(root)
         self.panel = panel
         return panel
@@ -338,7 +347,7 @@ final class CustomDockController {
 
     /// A popover, menu or drag that started on the Dock keeps it up.
     private var isInteracting: Bool {
-        if menuIsOpen { return true }
+        if menuIsOpen || drag.draggingIndex != nil { return true }
         if model.isRevealed, NSEvent.pressedMouseButtons != 0,
            barRect.insetBy(dx: -40, dy: -40).contains(NSEvent.mouseLocation) {
             return true

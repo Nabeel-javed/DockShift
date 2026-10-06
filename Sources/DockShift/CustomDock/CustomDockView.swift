@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Custom Dock window's content: the bar, slid past the screen edge when
 /// hidden, and the small handle that marks where it will appear. All of it
@@ -70,6 +71,9 @@ struct CustomDockRootView: View {
 /// The Custom Dock's bar: a translucent strip of tiles. Its frame may be
 /// thicker than the bar so magnified tiles can grow past it.
 struct CustomDockView: View {
+    @EnvironmentObject private var store: ProfileStore
+    @EnvironmentObject private var drag: DockDragState
+
     let layout: DockLayout
     let profile: DockProfile
     let runningApps: [NSRunningApplication]
@@ -176,6 +180,9 @@ struct CustomDockView: View {
                 TrashTile(layout: layout)
             }
         }
+        // Dropping on the bar pins files, apps and links, or moves a dragged tile.
+        .onDrop(of: DockBarDropDelegate.acceptedTypes,
+                delegate: DockBarDropDelegate(layout: layout, profile: profile, store: store, drag: drag))
         .padding(layout.padding)
     }
 }
@@ -278,6 +285,7 @@ private struct Magnify: ViewModifier {
 
 private struct DockTile: View {
     @EnvironmentObject private var store: ProfileStore
+    @EnvironmentObject private var drag: DockDragState
 
     let item: DockItem
     let index: Int
@@ -311,6 +319,17 @@ private struct DockTile: View {
             height: layout.isVertical ? layout.length(of: item) : layout.tileThickness
         )
         .modifier(Magnify(layout: layout, factor: isWidget ? 1.08 : 1.3))
+        .opacity(drag.draggingIndex == index ? 0.35 : 1)
+        // Drag to rearrange; dropping it off the Dock removes it.
+        .onDrag {
+            drag.beginDrag(index: index)
+            let provider = NSItemProvider()
+            provider.registerDataRepresentation(forTypeIdentifier: UTType.dockShiftTile.identifier, visibility: .ownProcess) { done in
+                done(Data(String(index).utf8), nil)
+                return nil
+            }
+            return provider
+        }
     }
 
     private func remove() {
@@ -381,6 +400,8 @@ private struct AppTile: View {
     let layout: DockLayout
     let onRemove: () -> Void
 
+    @State private var isDropTarget = false
+
     private var running: NSRunningApplication? { runningApps.app(matching: app) }
 
     private var badge: String? {
@@ -394,17 +415,23 @@ private struct AppTile: View {
                 .resizable()
                 .interpolation(.high)
         }
+        .modifier(LaunchBounce(active: runningApps.launching.contains(app.path), layout: layout))
+        .modifier(DropHighlight(active: isDropTarget, layout: layout))
         .onTapGesture(perform: open)
         .help(app.label)
-        .contextMenu {
-            Button("Open", action: open)
-            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([app.url]) }
-            if let running {
-                Button("Hide") { running.hide() }
-                Button("Quit") { running.terminate() }
+        // Files dropped on an app open with it.
+        .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
+            Task { @MainActor in
+                let urls = await DockDrop.fileURLs(from: providers)
+                guard !urls.isEmpty else { return }
+                _ = try? await NSWorkspace.shared.open(urls, withApplicationAt: running?.bundleURL ?? app.url,
+                                                       configuration: NSWorkspace.OpenConfiguration())
             }
-            Divider()
-            Button("Remove from Dock", action: onRemove)
+            return true
+        }
+        .contextMenu {
+            AppMenu(appURL: running?.bundleURL ?? app.url, running: running, isPinned: true,
+                    open: open, togglePin: onRemove)
         }
     }
 
@@ -413,6 +440,7 @@ private struct AppTile: View {
            running.bundleIdentifier == runningApps.frontmostBundleID {
             WindowMonitor.shared.minimizeFocusedWindow(of: running)
         } else {
+            if running == nil { runningApps.markLaunching(app.path) }
             AppLauncher.open(app.url, running: running)
         }
     }
@@ -439,15 +467,24 @@ private struct RunningAppTile: View {
         .modifier(Magnify(layout: layout, factor: 1.3))
         .onTapGesture { AppLauncher.open(app.bundleURL, running: app) }
         .help(app.localizedName ?? "")
+        // Drag onto the Dock's pinned section to keep it there.
+        .onDrag {
+            let provider = NSItemProvider()
+            let path = app.bundleURL?.path ?? ""
+            provider.registerDataRepresentation(forTypeIdentifier: UTType.dockShiftPinApp.identifier, visibility: .ownProcess) { done in
+                done(Data(path.utf8), nil)
+                return nil
+            }
+            return provider
+        }
         .contextMenu {
             if let url = app.bundleURL {
-                Button("Keep in Dock") {
+                AppMenu(appURL: url, running: app, isPinned: false, open: {
+                    AppLauncher.open(url, running: app)
+                }, togglePin: {
                     store.updateItems(of: profile.id) { $0.append(.app(AppReference(url: url))) }
-                }
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                })
             }
-            Button("Hide") { app.hide() }
-            Button("Quit") { app.terminate() }
         }
     }
 }
@@ -506,10 +543,22 @@ private struct FolderTile: View {
     let layout: DockLayout
     let onRemove: () -> Void
     @State private var showContents = false
+    @State private var isDropTarget = false
 
     var body: some View {
         IconTile(layout: layout, label: folder.showName ? folder.name : nil, isRunning: false) {
             FolderIcon(folder: folder)
+        }
+        .modifier(DropHighlight(active: isDropTarget, layout: layout))
+        // Files dropped on a folder move into it.
+        .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
+            let destination = folder.url
+            Task { @MainActor in
+                for url in await DockDrop.fileURLs(from: providers) where url.deletingLastPathComponent() != destination {
+                    try? FileManager.default.moveItem(at: url, to: destination.appendingPathComponent(url.lastPathComponent))
+                }
+            }
+            return true
         }
         .onTapGesture { showContents.toggle() }
         .popover(isPresented: $showContents) {
@@ -646,6 +695,7 @@ private struct LinkTile: View {
 
 private struct TrashTile: View {
     let layout: DockLayout
+    @State private var isDropTarget = false
 
     private var trashURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
@@ -665,8 +715,18 @@ private struct TrashTile: View {
         .frame(width: layout.isVertical ? layout.tileThickness : layout.iconSize,
                height: layout.isVertical ? layout.iconSize : layout.tileThickness)
         .modifier(Magnify(layout: layout, factor: 1.3))
+        .modifier(DropHighlight(active: isDropTarget, layout: layout))
         .onTapGesture { NSWorkspace.shared.open(trashURL) }
         .help("Trash")
+        // Files dropped on the Trash are moved to it.
+        .onDrop(of: [.fileURL], isTargeted: $isDropTarget) { providers in
+            Task { @MainActor in
+                for url in await DockDrop.fileURLs(from: providers) {
+                    try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+                }
+            }
+            return true
+        }
     }
 }
 
@@ -717,5 +777,92 @@ private struct WidgetTile: View {
             .popover(isPresented: $showConfig) {
                 WidgetConfigView(context: context)
             }
+    }
+}
+
+/// The app menu, like Apple's Dock: the app's windows, then Options, Hide and Quit.
+private struct AppMenu: View {
+    @EnvironmentObject private var windows: WindowMonitor
+    @ObservedObject private var loginItems = LoginItems.shared
+
+    let appURL: URL
+    let running: NSRunningApplication?
+    let isPinned: Bool
+    let open: () -> Void
+    let togglePin: () -> Void
+
+    var body: some View {
+        if let running {
+            let appWindows = windows.windows(of: running)
+            if !appWindows.isEmpty {
+                ForEach(appWindows) { window in
+                    Button(window.isMinimized ? "\(window.title) (minimized)" : window.title) {
+                        windows.focus(window, of: running)
+                    }
+                }
+                Divider()
+            }
+        } else {
+            Button("Open", action: open)
+            Divider()
+        }
+        Menu("Options") {
+            Button(isPinned ? "Remove from Dock" : "Keep in Dock", action: togglePin)
+            Toggle("Open at Login", isOn: Binding(
+                get: { loginItems.contains(appURL) },
+                set: { loginItems.set(appURL, enabled: $0) }
+            ))
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([appURL]) }
+            if let running {
+                Divider()
+                Button("Force Quit") { running.forceTerminate() }
+            }
+        }
+        if let running {
+            Divider()
+            Button(running.isHidden ? "Show" : "Hide") {
+                if running.isHidden { running.unhide() } else { running.hide() }
+            }
+            Button("Quit") { running.terminate() }
+        }
+    }
+}
+
+/// Bounces an app's tile away from the screen edge while it launches.
+private struct LaunchBounce: ViewModifier {
+    let active: Bool
+    let layout: DockLayout
+
+    func body(content: Content) -> some View {
+        if active {
+            TimelineView(.animation) { timeline in
+                let phase = timeline.date.timeIntervalSinceReferenceDate * .pi / 0.4
+                let height = abs(sin(phase)) * layout.iconSize * 0.35
+                content.offset(offset(for: height))
+            }
+        } else {
+            content
+        }
+    }
+
+    private func offset(for height: CGFloat) -> CGSize {
+        switch layout.settings.position {
+        case .bottom: return CGSize(width: 0, height: -height)
+        case .left: return CGSize(width: height, height: 0)
+        case .right: return CGSize(width: -height, height: 0)
+        }
+    }
+}
+
+/// Darkens and enlarges a tile while something is dragged over it.
+private struct DropHighlight: ViewModifier {
+    let active: Bool
+    let layout: DockLayout
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(active ? 1.15 : 1)
+            .brightness(active ? -0.15 : 0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: active)
     }
 }

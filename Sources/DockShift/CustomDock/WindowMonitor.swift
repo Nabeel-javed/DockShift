@@ -86,6 +86,39 @@ final class WindowMonitor: ObservableObject {
         AXUIElementSetAttributeValue(value as! AXUIElement, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
     }
 
+    /// One of an app's windows, for the app's Dock menu.
+    struct AppWindow: Identifiable {
+        let id: Int
+        let title: String
+        let isMinimized: Bool
+        let element: AXUIElement
+    }
+
+    /// The app's titled windows (needs Accessibility access; empty without it).
+    func windows(of app: NSRunningApplication) -> [AppWindow] {
+        guard AXIsProcessTrusted() else { return [] }
+        let element = AXUIElementCreateApplication(app.processIdentifier)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return [] }
+        return windows.enumerated().compactMap { index, window in
+            var titleValue: CFTypeRef?
+            var minimizedValue: CFTypeRef?
+            AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue)
+            AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minimizedValue)
+            guard let title = titleValue as? String, !title.isEmpty else { return nil }
+            return AppWindow(id: index, title: title, isMinimized: (minimizedValue as? Bool) ?? false, element: window)
+        }
+    }
+
+    /// Brings one window of the app to the front, restoring it if minimized.
+    func focus(_ window: AppWindow, of app: NSRunningApplication) {
+        AXUIElementSetAttributeValue(window.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        AXUIElementSetAttributeValue(window.element, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementPerformAction(window.element, kAXRaiseAction as CFString)
+        app.activate(options: [.activateIgnoringOtherApps])
+    }
+
     func restore(_ window: MinimizedWindow) {
         AXUIElementSetAttributeValue(window.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateIgnoringOtherApps])
