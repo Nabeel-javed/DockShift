@@ -25,6 +25,14 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(dockSetup.rawValue, forKey: Keys.dockSetup) }
     }
 
+    @Published var automation: AutomationSettings {
+        didSet {
+            if let data = try? JSONEncoder().encode(automation) {
+                defaults.set(data, forKey: Keys.automation)
+            }
+        }
+    }
+
     @Published var customDock: CustomDockSettings {
         didSet {
             if let data = try? JSONEncoder().encode(customDock) {
@@ -44,6 +52,7 @@ final class AppSettings: ObservableObject {
         static let smoothSwitching = "smoothSwitching"
         static let dockSetup = "dockSetup"
         static let customDock = "customDockSettings"
+        static let automation = "automationSettings"
     }
 
     init() {
@@ -52,6 +61,12 @@ final class AppSettings: ObservableObject {
         autoSaveDockChanges = defaults.bool(forKey: Keys.autoSave)
         smoothSwitching = defaults.object(forKey: Keys.smoothSwitching) as? Bool ?? true
         dockSetup = DockSetup(rawValue: defaults.string(forKey: Keys.dockSetup) ?? "") ?? .macOSOnly
+        if let data = defaults.data(forKey: Keys.automation),
+           let decoded = try? JSONDecoder().decode(AutomationSettings.self, from: data) {
+            automation = decoded
+        } else {
+            automation = AutomationSettings()
+        }
         if let data = defaults.data(forKey: Keys.customDock),
            let decoded = try? JSONDecoder().decode(CustomDockSettings.self, from: data) {
             customDock = decoded

@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: StatusItemController?
     private var customDock: CustomDockController?
+    private var autoSwitcher: AutoSwitcher?
     private let watcher = DockPreferencesWatcher()
     private let appleDock = AppleDockSuppressor()
     private var signalSources: [DispatchSourceSignal] = []
@@ -18,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppleDockSuppressor.startCrashHelper()
         statusItem = StatusItemController(store: store, settings: settings)
         customDock = CustomDockController(store: store, settings: settings)
+        autoSwitcher = AutoSwitcher(store: store, settings: settings)
 
         appleDock.willRestartDock = { [weak self] in self?.store.noteDockRestart() }
         // With the Custom Dock in use, ⌘⌥D ("Turn Dock hiding on/off") applies to it.
@@ -68,6 +70,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if store.profiles.isEmpty {
             WindowManager.shared.showEditor(store: store, settings: settings)
+        }
+    }
+
+    /// dockshift:// links.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            URLCommands.handle(url, store: store, settings: settings)
         }
     }
 

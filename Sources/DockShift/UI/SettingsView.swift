@@ -11,6 +11,8 @@ struct SettingsView: View {
                 .tabItem { Label("Custom Dock", systemImage: "dock.rectangle") }
             ShortcutsSettingsView()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
+            AutomationSettingsView()
+                .tabItem { Label("Automation", systemImage: "wand.and.stars") }
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }

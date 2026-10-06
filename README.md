@@ -20,7 +20,7 @@ macOS doesn't let apps remove its Dock: the same process runs Mission Control, t
 - Visual editor: add apps, insert spacers, drag to reorder, remove. Save without applying, or apply right away.
 - **Create from Current Dock** and **Replace with Current Dock** snapshot whatever is pinned.
 - **Automatically save Dock changes** syncs edits made directly in Apple's Dock back into the active profile.
-- **Smooth switching** freezes a snapshot of the Dock while it restarts (needs Screen Recording).
+- **Smooth switching** slides the Dock out and back in while it changes (asks once to control System Events).
 
 ## Custom Dock
 
@@ -28,7 +28,27 @@ A separate Dock on the bottom, left or right edge. Frosted or glass material, li
 
 Put anything in it: **apps** (running indicator, badges, right-click to hide/quit/remove), **folders** (custom name, color and letter; browse contents in a popout), **files**, **links** (favicon or symbol), **spacers**, **widgets**, plus optional **running apps**, **minimized windows** (restored individually, with previews) and **Trash**.
 
+Drag and drop works like Apple's Dock: drop files, folders, apps or web links on the Dock to pin them where they land, drag tiles to rearrange them or off the Dock to remove them, and drag a running app onto the pinned section to keep it. Files dropped on an app open with it, on a folder move into it, and on the Trash go to the Trash. Right-click an app for its open windows, Options (Keep in Dock, Open at Login, Show in Finder, Force Quit), Hide and Quit. Apps bounce while they launch.
+
 Switch Custom Dock profiles with a two-finger swipe or ⌘-scroll on the Dock.
+
+## Automatic switching
+
+Settings → Automation switches Docks for you:
+
+- **When an app is in front**, e.g. Xcode → a "Code" Dock, optionally switching back when you leave it.
+- **At a time** on chosen weekdays, e.g. Work at 9:00 Monday to Friday.
+
+## Links
+
+Drive DockShift from Raycast, Alfred, Stream Deck, Shortcuts (Open URL) or Terminal:
+
+| Link | Does |
+|---|---|
+| `dockshift://switch/Work` | Use the Dock named "Work" (or `?name=Work`) |
+| `dockshift://use/custom` / `dockshift://use/original` | Use the Custom Dock / Apple's Dock |
+| `dockshift://next` / `dockshift://previous` | Cycle Docks of the kind in use |
+| `dockshift://manage` / `dockshift://settings` | Open Manage Docks / Settings |
 
 ## Widgets
 
@@ -56,7 +76,7 @@ Token activity is read from Claude Code (`~/.claude/projects`) and Codex (`~/.co
 
 ## Permissions
 
-All optional, asked for only when a feature needs them: **Screen Recording** (smooth switching, window previews), **Accessibility** (badges, minimized windows), **Calendars** and **Reminders**, **Automation** (Now Playing), **Location** (Weather). No account, no telemetry; profiles live in `~/Library/Application Support/DockShift`.
+All optional, asked for only when a feature needs them: **Screen Recording** (window previews), **Accessibility** (badges, minimized windows, window lists in app menus), **Automation** of System Events (smooth switching, Open at Login), **Calendars** and **Reminders**, **Automation** (Now Playing), **Location** (Weather). No account, no telemetry; profiles live in `~/Library/Application Support/DockShift`.
 
 ## Troubleshooting
 
